@@ -1,0 +1,8 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: . # Указывает на текущую директорию с Dockerfile
+      dockerfile: Dockerfile
+    container_name: UpDownLoader

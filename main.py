@@ -14,14 +14,13 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 from exceptions import ErrorDownload
 
-load_dotenv()
-
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 if not TOKEN:
     raise ValueError("Не установлен TELEGRAM_TOKEN в файле .env")
