@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import traceback
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import instaloader
@@ -14,10 +15,29 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 from exceptions import ErrorDownload
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+
+def configure_logging():
+    log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    log_file = 'logs/app.log'
+    file_handler = TimedRotatingFileHandler(
+        log_file, when='midnight', interval=1, backupCount=7, encoding='utf-8'
+    )
+    file_handler.setFormatter(log_formatter)
+    file_handler.setLevel(logging.INFO)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    console_handler.setLevel(logging.INFO)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[file_handler, console_handler]  # Добавляем оба обработчика
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 load_dotenv()
