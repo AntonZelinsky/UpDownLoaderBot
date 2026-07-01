@@ -1,0 +1,2 @@
+# Cookie files are secrets — never commit them.
+*.txt

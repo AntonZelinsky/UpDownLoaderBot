@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+tests/
+downloads/
+cookies/*.txt
+*.mp4
+.env
+.git
+.idea
+.vs

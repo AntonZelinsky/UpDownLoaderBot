@@ -1,8 +1,14 @@
-version: '3.9'
-
 services:
   app:
     build:
-      context: . # Указывает на текущую директорию с Dockerfile
+      context: .
       dockerfile: Dockerfile
     container_name: UpDownLoader
+    restart: unless-stopped
+    environment:
+      - UpDownLoaderBot__Telegram__Token=${UpDownLoaderBot__Telegram__Token}
+    ports:
+      - "8080:8080"
+    volumes:
+      # Instagram cookies (kept out of the image); resolved via YtDlp:InstagramCookiesFile.
+      - ./cookies/InstagramCookies.txt:/app/cookies/InstagramCookies.txt:ro
