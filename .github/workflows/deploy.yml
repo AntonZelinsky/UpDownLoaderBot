@@ -1,0 +1,155 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Test
+        run: dotnet test --configuration Release
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR image names must be lowercase; github.repository is not normalized.
+      - name: Compute lowercase image name
+        id: name
+        run: echo "value=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.value }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Immutable image ref for this commit; consumed by the deploy job.
+      - name: Export image ref
+        id: image
+        run: echo "ref=${{ steps.name.outputs.value }}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Read the compose file from the repo so it can be streamed in the SSH step below.
+      - name: Read compose file
+        id: compose
+        run: |
+          {
+            echo 'content<<COMPOSE_MARKER'
+            cat docker-compose.yml
+            echo 'COMPOSE_MARKER'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          APP_IMAGE: ${{ needs.build-and-push.outputs.image }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: APP_IMAGE,DEPLOY_PATH,GHCR_USER,GHCR_TOKEN,TELEGRAM_TOKEN
+          script: |
+            set -euo pipefail
+            # Fail before touching the working .env if the token secret is empty.
+            : "${TELEGRAM_TOKEN:?TELEGRAM_TOKEN secret is empty}"
+
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+
+            mkdir -p cookies
+            cat > docker-compose.yml <<'COMPOSE_EOF'
+            ${{ steps.compose.outputs.content }}
+            COMPOSE_EOF
+            printf 'UpDownLoaderBot__Telegram__Token=%s\n' "$TELEGRAM_TOKEN" > .env
+            cat > cookies/InstagramCookies.txt <<'COOKIES_EOF'
+            ${{ secrets.INSTAGRAM_COOKIES }}
+            COOKIES_EOF
+
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            export APP_IMAGE
+            docker compose pull
+            docker compose up -d
+
+            # A green deploy must mean a running container, not just "up -d returned 0".
+            sleep 5
+            if [ "$(docker inspect -f '{{.State.Status}}' UpDownLoader)" != "running" ]; then
+              echo "Container is not running after deploy:" >&2
+              docker compose logs --tail=50
+              exit 1
+            fi
+
+            docker image prune -f

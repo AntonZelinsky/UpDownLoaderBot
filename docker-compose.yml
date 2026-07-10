@@ -1,5 +1,8 @@
 services:
   app:
+    # Image is built in CI and published to GHCR; APP_IMAGE is set by the deploy job.
+    # For local builds: docker compose build (uses the Dockerfile below).
+    image: ${APP_IMAGE}
     build:
       context: .
       dockerfile: Dockerfile
