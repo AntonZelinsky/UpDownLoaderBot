@@ -13,7 +13,8 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
     // Requires yt-dlp on PATH. Instagram needs authentication via cookies:
     //   - IG_COOKIES=/path/to/cookies.txt, or
     //   - a cookies/InstagramCookies.txt file in the repository root (auto-detected).
-    [Fact]
+    // Skipped by default (and in CI, where neither yt-dlp nor cookies exist); run manually.
+    [Fact(Skip = "Integration test: requires yt-dlp on PATH and Instagram cookies; not available in CI.")]
     public async Task Downloads_instagram_reel_to_a_nonempty_file()
     {
         var cookiesFile = Environment.GetEnvironmentVariable("IG_COOKIES") ?? FindRepoCookies();
