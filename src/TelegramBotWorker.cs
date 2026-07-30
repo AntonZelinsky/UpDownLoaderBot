@@ -103,7 +103,7 @@ public sealed partial class TelegramBotWorker(
             catch (Exception ex)
             {
                 lastError = ex;
-                logger.LogWarning(ex, "Downloader '{Name}' failed for {Url}", name, url);
+                logger.LogError(ex, "Downloader '{Name}' failed for {Url}", name, url);
             }
         }
 

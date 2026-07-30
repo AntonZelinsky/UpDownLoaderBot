@@ -132,7 +132,10 @@ jobs:
             cat > docker-compose.yml <<'COMPOSE_EOF'
             ${{ steps.compose.outputs.content }}
             COMPOSE_EOF
-            printf 'UpDownLoaderBot__Telegram__Token=%s\n' "$TELEGRAM_TOKEN" > .env
+            # APP_IMAGE goes into .env, not just this session's environment, so a
+            # manual `docker compose up -d` on the server knows which image to run.
+            printf 'APP_IMAGE=%s\n' "$APP_IMAGE" > .env
+            printf 'UpDownLoaderBot__Telegram__Token=%s\n' "$TELEGRAM_TOKEN" >> .env
             cat > cookies/InstagramCookies.txt <<'COOKIES_EOF'
             ${{ secrets.INSTAGRAM_COOKIES }}
             COOKIES_EOF
@@ -140,7 +143,6 @@ jobs:
             trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-            export APP_IMAGE
             docker compose pull
             docker compose up -d
 
