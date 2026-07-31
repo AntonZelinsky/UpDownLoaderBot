@@ -14,4 +14,7 @@ services:
       - "8080:8080"
     volumes:
       # Instagram cookies (kept out of the image); resolved via YtDlp:InstagramCookiesFile.
-      - ./cookies/InstagramCookies.txt:/app/cookies/InstagramCookies.txt:ro
+      # The whole directory is mounted read-write: yt-dlp refreshes the Instagram session on every
+      # run and writes it to InstagramCookies.session.txt here, so a renewed session outlives both
+      # container restarts and redeploys.
+      - ./cookies:/app/cookies

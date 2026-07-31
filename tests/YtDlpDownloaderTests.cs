@@ -61,6 +61,67 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public void Seeds_a_writable_cookies_session_next_to_the_deployed_file()
+    {
+        using var cookies = new TempCookies("deployed-v1");
+
+        CreateDownloader(cookies.DeployedFile);
+
+        Assert.Equal("deployed-v1", File.ReadAllText(cookies.SessionFile));
+    }
+
+    [Fact]
+    public void Keeps_a_session_refreshed_by_ytdlp_when_the_deployed_cookies_are_unchanged()
+    {
+        using var cookies = new TempCookies("deployed-v1");
+        CreateDownloader(cookies.DeployedFile);
+
+        // Stand in for yt-dlp writing a renewed Instagram session back to its cookies file.
+        File.WriteAllText(cookies.SessionFile, "refreshed-by-ytdlp");
+
+        // A restart (same deployed cookies) must not throw the refreshed session away.
+        CreateDownloader(cookies.DeployedFile);
+
+        Assert.Equal("refreshed-by-ytdlp", File.ReadAllText(cookies.SessionFile));
+    }
+
+    [Fact]
+    public void Reseeds_the_session_when_an_interrupted_write_left_it_empty()
+    {
+        using var cookies = new TempCookies("deployed-v1");
+        CreateDownloader(cookies.DeployedFile);
+
+        // yt-dlp saves cookies by truncating the file first; a killed write leaves it empty.
+        File.WriteAllText(cookies.SessionFile, string.Empty);
+
+        CreateDownloader(cookies.DeployedFile);
+
+        Assert.Equal("deployed-v1", File.ReadAllText(cookies.SessionFile));
+    }
+
+    [Fact]
+    public void Reseeds_the_session_after_the_deploy_deleted_it_for_new_cookies()
+    {
+        using var cookies = new TempCookies("deployed-v1");
+        CreateDownloader(cookies.DeployedFile);
+        File.WriteAllText(cookies.SessionFile, "refreshed-by-ytdlp");
+
+        // What the deploy does when the INSTAGRAM_COOKIES secret changed.
+        File.WriteAllText(cookies.DeployedFile, "deployed-v2");
+        File.Delete(cookies.SessionFile);
+
+        CreateDownloader(cookies.DeployedFile);
+
+        Assert.Equal("deployed-v2", File.ReadAllText(cookies.SessionFile));
+    }
+
+    private static InstagramYtDlpDownloader CreateDownloader(string cookiesFile)
+    {
+        var options = Options.Create(new InstagramYtDlpOptions { InstagramCookiesFile = cookiesFile });
+        return new InstagramYtDlpDownloader(options, NullLogger<InstagramYtDlpDownloader>.Instance);
+    }
+
     // Walks up from the test binary to find cookies/InstagramCookies.txt in the repo root.
     private static string? FindRepoCookies()
     {
@@ -77,5 +138,37 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
         }
 
         return null;
+    }
+
+    // A throwaway directory holding a deployed cookies file and the session file derived from it.
+    private sealed class TempCookies : IDisposable
+    {
+        private readonly string _directory;
+
+        public TempCookies(string deployedContent)
+        {
+            _directory = Path.Combine(Path.GetTempPath(), $"updownloaderbot-tests-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(_directory);
+
+            DeployedFile = Path.Combine(_directory, "InstagramCookies.txt");
+            SessionFile = Path.Combine(_directory, "InstagramCookies.session.txt");
+            File.WriteAllText(DeployedFile, deployedContent);
+        }
+
+        public string DeployedFile { get; }
+
+        public string SessionFile { get; }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(_directory, recursive: true);
+            }
+            catch
+            {
+                /* best effort */
+            }
+        }
     }
 }

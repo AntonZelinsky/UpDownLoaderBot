@@ -43,7 +43,11 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         using var request = BuildHttpMessage(url);
         var http = _httpClientFactory.CreateClient(nameof(KkInstagramDownloader));
 
-        _logger.LogInformation("Fetching {Url} via kkinstagram", url);
+        // Log the rewritten proxy URL that is actually requested; the original link is
+        // already logged by the caller.
+        var requestUrl = request.RequestUri;
+
+        _logger.LogInformation("Fetching {Url} via kkinstagram", requestUrl);
 
         using var response = await http.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
@@ -53,7 +57,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         if (contentType is null || !contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"kkinstagram returned non-video content ('{contentType ?? "unknown"}') for {url}.");
+                $"kkinstagram returned non-video content ('{contentType ?? "unknown"}') for {requestUrl}.");
         }
 
         var filePath = Path.Combine(OutputDirectory, $"{Guid.NewGuid():N}{ExtensionFor(contentType)}");
@@ -64,7 +68,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
             await source.CopyToAsync(file, timeoutCts.Token);
         }
 
-        _logger.LogInformation("Downloaded {Url} via kkinstagram -> {FilePath}", url, filePath);
+        _logger.LogInformation("Downloaded {Url} via kkinstagram -> {FilePath}", requestUrl, filePath);
         return filePath;
     }
 

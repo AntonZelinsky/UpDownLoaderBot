@@ -136,9 +136,20 @@ jobs:
             # manual `docker compose up -d` on the server knows which image to run.
             printf 'APP_IMAGE=%s\n' "$APP_IMAGE" > .env
             printf 'UpDownLoaderBot__Telegram__Token=%s\n' "$TELEGRAM_TOKEN" >> .env
-            cat > cookies/InstagramCookies.txt <<'COOKIES_EOF'
+            # yt-dlp keeps refreshing the Instagram session in InstagramCookies.session.txt.
+            # Only overwrite the deployed cookies when the secret actually changed, and let the
+            # deleted session file be the signal that the app must start over from the new cookies.
+            cat > cookies/InstagramCookies.new.txt <<'COOKIES_EOF'
             ${{ secrets.INSTAGRAM_COOKIES }}
             COOKIES_EOF
+            if cmp -s cookies/InstagramCookies.new.txt cookies/InstagramCookies.txt; then
+              rm -f cookies/InstagramCookies.new.txt
+              echo "Instagram cookies unchanged; keeping the refreshed yt-dlp session."
+            else
+              mv cookies/InstagramCookies.new.txt cookies/InstagramCookies.txt
+              rm -f cookies/InstagramCookies.session.txt
+              echo "New Instagram cookies deployed; the yt-dlp session will be re-seeded from them."
+            fi
 
             trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin

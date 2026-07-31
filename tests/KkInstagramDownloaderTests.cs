@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using UpDownLoaderBot.Providers.Instagram;
 
@@ -46,11 +48,10 @@ public class KkInstagramDownloaderTests
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("<html>not a video</html>", System.Text.Encoding.UTF8, "text/html")
+            Content = new StringContent("<html>not a video</html>", Encoding.UTF8, "text/html")
         });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
     }
 
     private static KkInstagramDownloader CreateDownloader(HttpMessageHandler handler)
@@ -65,7 +66,7 @@ public class KkInstagramDownloaderTests
         {
             Content = new ByteArrayContent(body)
         };
-        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
         return response;
     }
 
@@ -95,6 +96,9 @@ public class KkInstagramDownloaderTests
     // Hands out an HttpClient wired to the stub handler, mimicking IHttpClientFactory.
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+        public HttpClient CreateClient(string name)
+        {
+            return new HttpClient(handler, disposeHandler: false);
+        }
     }
 }

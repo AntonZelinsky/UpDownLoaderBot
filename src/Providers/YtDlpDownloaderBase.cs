@@ -207,6 +207,57 @@ public abstract class YtDlpDownloaderBase
         return null;
     }
 
+    /// <summary>
+    ///     Prepares the cookies file that is actually handed to yt-dlp.
+    ///     yt-dlp rewrites its cookies file on exit (that is how a refreshed session is kept), so the
+    ///     deployed file is never used directly — it would fail on a read-only mount, and any renewed
+    ///     session would be thrown away. Instead it is copied to a sibling
+    ///     <c>&lt;name&gt;.session&lt;ext&gt;</c> file that yt-dlp keeps updating in place, so the refreshed
+    ///     session survives restarts. An existing session is kept as-is; deleting it (as the deploy
+    ///     does when new cookies arrive) is what makes the session start over from the deployed file.
+    /// </summary>
+    protected string PrepareCookiesFile(string deployedFile)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(deployedFile))!;
+        var name = Path.GetFileNameWithoutExtension(deployedFile);
+        var extension = Path.GetExtension(deployedFile);
+        var sessionFile = Path.Combine(directory, $"{name}.session{extension}");
+
+        try
+        {
+            // A session emptied by an interrupted yt-dlp write (it saves with open(..., 'w'))
+            // is worse than useless: it would authenticate with no cookies at all.
+            if (File.Exists(sessionFile) && new FileInfo(sessionFile).Length > 0)
+            {
+                _logger.LogInformation(
+                    "Reusing cookies session {SessionFile}, last written {WrittenUtc:u}.",
+                    sessionFile,
+                    File.GetLastWriteTimeUtc(sessionFile));
+
+                return sessionFile;
+            }
+
+            File.Copy(deployedFile, sessionFile, overwrite: true);
+
+            _logger.LogInformation(
+                "Seeded the cookies session {SessionFile} from deployed cookies {DeployedFile}.",
+                sessionFile,
+                deployedFile);
+
+            return sessionFile;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to prepare a writable cookies session next to {DeployedFile}; passing it to yt-dlp "
+                + "directly, which fails if the file is read-only.",
+                deployedFile);
+
+            return deployedFile;
+        }
+    }
+
     private void TryKill(Process process)
     {
         try

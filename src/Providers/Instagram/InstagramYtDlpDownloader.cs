@@ -20,13 +20,17 @@ public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase, IInstagramVi
     public InstagramYtDlpDownloader(IOptions<InstagramYtDlpOptions> options, ILogger<InstagramYtDlpDownloader> logger)
         : base(logger)
     {
-        _cookiesFile = ResolveCookiesFile(options.Value.InstagramCookiesFile);
+        var deployedFile = ResolveCookiesFile(options.Value.InstagramCookiesFile);
+        _cookiesFile = deployedFile is null ? null : PrepareCookiesFile(deployedFile);
 
         if (!string.IsNullOrWhiteSpace(options.Value.InstagramCookiesFile))
         {
-            if (_cookiesFile is not null)
+            if (deployedFile is not null)
             {
-                logger.LogInformation("Using Instagram cookies file {CookiesFile}", _cookiesFile);
+                logger.LogInformation(
+                    "Instagram cookies: deployed {DeployedFile}, yt-dlp uses {CookiesFile}",
+                    deployedFile,
+                    _cookiesFile);
             }
             else
             {
