@@ -1,5 +1,6 @@
 using Telegram.Bot;
 using UpDownLoaderBot;
+using UpDownLoaderBot.Media;
 using UpDownLoaderBot.Providers.Instagram;
 using KkInstagramDownloader = UpDownLoaderBot.Providers.Instagram.KkInstagramDownloader;
 
@@ -23,6 +24,7 @@ if (string.IsNullOrWhiteSpace(token))
 }
 
 builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(token));
+builder.Services.AddSingleton<TelegramVideoPreparer>();
 builder.Services.Configure<InstagramYtDlpOptions>(appConfig.GetSection("YtDlp"));
 
 // Register the Instagram download strategies enabled by feature flags. Order here is the order

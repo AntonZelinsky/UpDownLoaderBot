@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace UpDownLoaderBot.Providers;
 
 /// <summary>
@@ -24,6 +22,14 @@ public abstract class YtDlpDownloaderBase
     /// <summary>Delay between retry attempts, in seconds.</summary>
     private const int RetryDelaySeconds = 5;
 
+    /// <summary>
+    ///     Prefers a progressive file that already carries audio, falling back to muxing a
+    ///     video+audio pair. 45 MB is the Bot API's 50 MB limit with headroom; <c>&lt;?</c> keeps
+    ///     formats of unknown size eligible, which is how Instagram reports its progressive ones.
+    ///     A format outside these bounds is refused at upload time, not re-encoded.
+    /// </summary>
+    private const string FormatSelector = "b[filesize<?45M]/bv*[filesize<?45M]+ba/b/bv*+ba";
+
     private readonly ILogger _logger;
 
     protected YtDlpDownloaderBase(ILogger logger)
@@ -42,7 +48,9 @@ public abstract class YtDlpDownloaderBase
     public async Task<string> DownloadAsync(string url, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(OutputDirectory);
-        var outputTemplate = Path.Combine(OutputDirectory, "%(id)s.%(ext)s");
+        // The id alone is not unique enough: yt-dlp reuses an existing file instead of downloading
+        // again, so a leftover from an interrupted run would be sent in place of a fresh download.
+        var outputTemplate = Path.Combine(OutputDirectory, $"%(id)s-{Guid.NewGuid():N}.%(ext)s");
 
         var attempts = Math.Max(1, MaxRetries);
         Exception? lastError = null;
@@ -83,7 +91,13 @@ public abstract class YtDlpDownloaderBase
             // yt-dlp <url> -o "downloads/%(id)s.%(ext)s" --no-playlist
             url,
             "-o", outputTemplate,
-            "--no-playlist"
+            "--no-playlist",
+            // Instagram's DASH ladder is VP9-only and reaches 1440x2560 / ~70 MB, past what a bot
+            // may upload, while its progressive rendition is a ready-to-send H.264+AAC file.
+            "-f", FormatSelector,
+            // For the fallback: cap at 1080p, prefer H.264, take the smaller of equal matches.
+            "-S", "res:1080,vcodec:h264,+size",
+            "--merge-output-format", "mp4"
         };
 
         AddServiceArguments(arguments);
@@ -98,74 +112,28 @@ public abstract class YtDlpDownloaderBase
 
     private async Task<string> RunAsync(string url, string outputTemplate, CancellationToken cancellationToken)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = Executable,
-            // Capture stdout to read the produced file path (see --print below).
-            RedirectStandardOutput = true,
-            // Capture stderr to surface yt-dlp errors in logs and exceptions.
-            RedirectStandardError = true,
-            // Launch the process directly instead of via the OS shell; required for stream redirection.
-            UseShellExecute = false,
-            // Don't pop up a console window (relevant on Windows).
-            CreateNoWindow = true
-        };
-        foreach (var argument in BuildArguments(url, outputTemplate))
-        {
-            psi.ArgumentList.Add(argument);
-        }
-
-        using var process = new Process { StartInfo = psi };
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds));
-
         _logger.LogInformation("Running yt-dlp for {Url}", url);
 
-        if (!process.Start())
+        var result = await ProcessRunner.RunAsync(
+            Executable,
+            BuildArguments(url, outputTemplate),
+            TimeoutSeconds,
+            cancellationToken);
+
+        if (!string.IsNullOrEmpty(result.StandardError))
         {
-            throw new InvalidOperationException("Failed to start the yt-dlp process.");
+            _logger.LogInformation("yt-dlp stderr: {Stderr}", result.StandardError);
         }
 
-        // Read both streams concurrently to avoid buffer deadlocks.
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
-        var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
-
-        try
-        {
-            await process.WaitForExitAsync(timeoutCts.Token);
-        }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            TryKill(process);
-            throw new TimeoutException($"yt-dlp timed out after {TimeoutSeconds}s for {url}.");
-        }
-
-        var stdout = (await stdoutTask).Trim();
-        var stderr = (await stderrTask).Trim();
-
-        if (!string.IsNullOrEmpty(stdout))
-        {
-            _logger.LogInformation("yt-dlp stdout: {Stdout}", stdout);
-        }
-
-        if (!string.IsNullOrEmpty(stderr))
-        {
-            _logger.LogInformation("yt-dlp stderr: {Stderr}", stderr);
-        }
-
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"yt-dlp exited with code {process.ExitCode}. {stderr}");
-        }
-
-        var filePath = stdout
+        // The last printed line is the produced file path (see --print).
+        var filePath = result.StandardOutput
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .LastOrDefault();
 
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
         {
-            throw new InvalidOperationException($"yt-dlp did not produce a valid output file. stdout: '{stdout}'");
+            throw new InvalidOperationException(
+                $"yt-dlp did not produce a valid output file. stdout: '{result.StandardOutput}'");
         }
 
         _logger.LogInformation("Downloaded {Url} -> {FilePath}", url, filePath);
@@ -258,18 +226,4 @@ public abstract class YtDlpDownloaderBase
         }
     }
 
-    private void TryKill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to kill yt-dlp process.");
-        }
-    }
 }

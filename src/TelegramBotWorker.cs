@@ -3,6 +3,7 @@ using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using UpDownLoaderBot.Media;
 using UpDownLoaderBot.Providers.Instagram;
 
 namespace UpDownLoaderBot;
@@ -14,6 +15,7 @@ namespace UpDownLoaderBot;
 public sealed partial class TelegramBotWorker(
     ITelegramBotClient bot,
     IEnumerable<IInstagramVideoDownloader> downloaders,
+    TelegramVideoPreparer preparer,
     ILogger<TelegramBotWorker> logger) : BackgroundService
 {
     private readonly IReadOnlyList<IInstagramVideoDownloader> _downloaders = downloaders.ToArray();
@@ -56,45 +58,98 @@ public sealed partial class TelegramBotWorker(
         var url = match.Value;
         logger.LogInformation("Found URL: {Url}", url);
 
-        string? filePath = null;
+        PreparedVideo? video = null;
         try
         {
             await client.SendChatAction(message.Chat.Id, ChatAction.UploadVideo, cancellationToken: ct);
 
-            filePath = await DownloadAsync(url, ct);
+            video = await DownloadAsync(url, ct);
 
-            await using var stream = File.OpenRead(filePath);
+            await using var stream = File.OpenRead(video.FilePath);
+            await using var thumbnailStream = video.ThumbnailPath is null
+                ? null
+                : File.OpenRead(video.ThumbnailPath);
+
+            // The mobile clients lay the player out from these; left out, they stay zero in the
+            // message and the frame gets squashed.
             await client.SendVideo(
                 chatId: message.Chat.Id,
-                video: InputFile.FromStream(stream, Path.GetFileName(filePath)),
+                video: InputFile.FromStream(stream, Path.GetFileName(video.FilePath)),
                 caption: url,
+                duration: video.Duration,
+                width: video.Width,
+                height: video.Height,
+                thumbnail: thumbnailStream is null
+                    ? null
+                    : InputFile.FromStream(thumbnailStream, Path.GetFileName(video.ThumbnailPath!)),
+                supportsStreaming: true,
                 replyParameters: new ReplyParameters { MessageId = message.MessageId },
                 cancellationToken: ct);
 
-            logger.LogInformation("Sent video for {Url} to chat {ChatId}", url, message.Chat.Id);
+            logger.LogInformation(
+                "Sent video for {Url} to chat {ChatId} as {Width}x{Height}, {Duration}s",
+                url, message.Chat.Id, video.Width, video.Height, video.Duration);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The bot is shutting down, not failing to handle the link: no reaction to leave behind.
+            throw;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to process {Url}", url);
+            await TryReactWithFailureAsync(client, message, ct);
         }
         finally
         {
-            TryDelete(filePath);
+            if (video is not null)
+            {
+                foreach (var file in video.FilesToDelete)
+                {
+                    TryDelete(file);
+                }
+            }
         }
     }
 
-    // Tries each enabled downloader in order, returning the first successful result.
-    private async Task<string> DownloadAsync(string url, CancellationToken ct)
+    // A thumbs-down says the link was seen and did not work, without adding a message to the chat.
+    // Best effort: where reactions are restricted, the failure is already in the log.
+    private async Task TryReactWithFailureAsync(ITelegramBotClient client, Message message, CancellationToken ct)
+    {
+        try
+        {
+            await client.SetMessageReaction(
+                chatId: message.Chat.Id,
+                messageId: message.MessageId,
+                reaction: [new ReactionTypeEmoji { Emoji = "👎" }],
+                cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to react to message {MessageId} in chat {ChatId}",
+                message.MessageId, message.Chat.Id);
+        }
+    }
+
+    // Tries each enabled downloader in order, returning the first result that is a usable video.
+    // Preparation runs inside the loop so that a download which turns out not to be a video (see
+    // TelegramVideoPreparer) moves on to the next downloader instead of being sent.
+    private async Task<PreparedVideo> DownloadAsync(string url, CancellationToken ct)
     {
         Exception? lastError = null;
         foreach (var downloader in _downloaders)
         {
             ct.ThrowIfCancellationRequested();
             var name = downloader.GetType().Name;
+            string? filePath = null;
+            // Past this point the preparer deletes everything it produced, the download included.
+            var preparerOwnsCleanup = false;
             try
             {
                 logger.LogInformation("Trying downloader '{Name}' for {Url}", name, url);
-                return await downloader.DownloadAsync(url, ct);
+                filePath = await downloader.DownloadAsync(url, ct);
+                preparerOwnsCleanup = true;
+                return await preparer.PrepareAsync(filePath, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -104,6 +159,12 @@ public sealed partial class TelegramBotWorker(
             {
                 lastError = ex;
                 logger.LogError(ex, "Downloader '{Name}' failed for {Url}", name, url);
+
+                // A download that never reached the preparer is the only leftover left to us.
+                if (filePath is not null && !preparerOwnsCleanup)
+                {
+                    TryDelete(filePath);
+                }
             }
         }
 
