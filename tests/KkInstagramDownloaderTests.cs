@@ -54,6 +54,54 @@ public class KkInstagramDownloaderTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Refuses_a_download_whose_announced_size_is_over_the_limit()
+    {
+        // Content-Length is checked before the body is read, so nothing reaches the disk.
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            var response = VideoResponse("video/mp4", [1, 2, 3]);
+            response.Content.Headers.ContentLength = 100L * 1024 * 1024;
+            return response;
+        });
+
+        var before = DownloadedFiles();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
+
+        Assert.Contains("over the 60 MB limit", error.Message);
+        Assert.Equal(before, DownloadedFiles());
+    }
+
+    [Fact]
+    public async Task Stops_a_download_that_outgrows_the_limit_without_announcing_it()
+    {
+        // No Content-Length at all (as on a chunked response), and far more data than allowed: the
+        // copy has to give up on the bytes it has written rather than fill the disk.
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new EndlessStream())
+            };
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+            return response;
+        });
+
+        var before = DownloadedFiles();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
+
+        Assert.Contains("sent more than 60 MB", error.Message);
+        // The partial file must be gone, not left behind for nobody to clean up.
+        Assert.Equal(before, DownloadedFiles());
+    }
+
+    private static string[] DownloadedFiles() =>
+        Directory.Exists("downloads") ? Directory.GetFiles("downloads") : [];
+
     private static KkInstagramDownloader CreateDownloader(HttpMessageHandler handler)
     {
         var factory = new StubHttpClientFactory(handler);
@@ -91,6 +139,26 @@ public class KkInstagramDownloaderTests
         {
             return Task.FromResult(responder(request));
         }
+    }
+
+    // Never-ending source of bytes, standing in for a response that keeps on coming.
+    private sealed class EndlessStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count) => count;
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     // Hands out an HttpClient wired to the stub handler, mimicking IHttpClientFactory.

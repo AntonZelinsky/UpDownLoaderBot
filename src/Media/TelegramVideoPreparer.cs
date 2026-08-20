@@ -50,20 +50,7 @@ public sealed class TelegramVideoPreparer(ILogger<TelegramVideoPreparer> logger)
             var probe = await ProbeAsync(filePath, cancellationToken);
             var sizeBytes = new FileInfo(filePath).Length;
 
-            // Both downloaders hand over progressive H.264 (see YtDlpDownloaderBase's format
-            // selector). Anything else is refused rather than re-encoded: VP9 does not play on iOS,
-            // and re-encoding to fix that would be minutes of CPU for a case that should not happen.
-            if (!probe.IsH264)
-            {
-                throw new InvalidOperationException($"'{filePath}' is '{probe.CodecName}', not H.264.");
-            }
-
-            if (sizeBytes > UploadLimitBytes)
-            {
-                throw new InvalidOperationException(
-                    $"'{filePath}' is {sizeBytes / 1048576} MB, over the {UploadLimitBytes / 1048576} MB "
-                    + "a bot may upload.");
-            }
+            EnsureTelegramCanSendIt(filePath, probe, sizeBytes);
 
             var thumbnailPath = await TryCreateThumbnailAsync(filePath, probe, cancellationToken);
             if (thumbnailPath is not null)
@@ -109,32 +96,11 @@ public sealed class TelegramVideoPreparer(ILogger<TelegramVideoPreparer> logger)
 
         using var document = JsonDocument.Parse(result.StandardOutput);
         var root = document.RootElement;
-        var streams = Child(root, "streams")?.EnumerateArray().ToArray() ?? [];
 
-        // Cover art counts as a video stream; taking it would describe the upload with its size.
-        var video = streams.FirstOrDefault(stream =>
-            Text(stream, "codec_type") == "video" && Int(Child(stream, "disposition"), "attached_pic") != 1);
+        EnsureNotStillImage(filePath, root);
 
-        if (video.ValueKind != JsonValueKind.Object)
-        {
-            throw new InvalidOperationException($"'{filePath}' contains no video stream.");
-        }
-
-        // A single-frame image is a video stream too; the format name (jpeg_pipe, png_pipe, …) tells.
-        var formatName = Text(Child(root, "format"), "format_name") ?? "";
-        if (formatName.Contains("_pipe", StringComparison.Ordinal)
-            || formatName.StartsWith("image", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"'{filePath}' is a still image ('{formatName}'), not a video.");
-        }
-
-        var width = Int(video, "width");
-        var height = Int(video, "height");
-
-        if (width <= 0 || height <= 0)
-        {
-            throw new InvalidOperationException($"'{filePath}' has no usable dimensions ({width}x{height}).");
-        }
+        var video = RequireVideoStream(filePath, root);
+        var (width, height) = RequireDimensions(filePath, video);
 
         return new VideoProbe(
             Text(video, "codec_name") ?? "",
@@ -143,6 +109,62 @@ public sealed class TelegramVideoPreparer(ILogger<TelegramVideoPreparer> logger)
             ParseSampleAspectRatio(video),
             ParseRotation(video),
             ParseSeconds(Child(root, "format"), "duration"));
+    }
+
+    // Both downloaders hand over progressive H.264 (see YtDlpDownloaderBase's format selector).
+    // Anything else is refused rather than re-encoded: VP9 does not play on iOS, and re-encoding to
+    // fix that would be minutes of CPU for a case that should not happen.
+    private static void EnsureTelegramCanSendIt(string filePath, VideoProbe probe, long sizeBytes)
+    {
+        if (!probe.IsH264)
+        {
+            throw new InvalidOperationException($"'{filePath}' is '{probe.CodecName}', not H.264.");
+        }
+
+        if (sizeBytes > UploadLimitBytes)
+        {
+            throw new InvalidOperationException(
+                $"'{filePath}' is {sizeBytes / 1048576} MB, over the {UploadLimitBytes / 1048576} MB "
+                + "a bot may upload.");
+        }
+    }
+
+    // A single-frame image is a video stream too; the format name (jpeg_pipe, png_pipe, …) tells.
+    private static void EnsureNotStillImage(string filePath, JsonElement root)
+    {
+        var formatName = Text(Child(root, "format"), "format_name") ?? "";
+
+        if (formatName.Contains("_pipe", StringComparison.Ordinal)
+            || formatName.StartsWith("image", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"'{filePath}' is a still image ('{formatName}'), not a video.");
+        }
+    }
+
+    // Cover art counts as a video stream; taking it would describe the upload with its size.
+    private static JsonElement RequireVideoStream(string filePath, JsonElement root)
+    {
+        var streams = Child(root, "streams")?.EnumerateArray() ?? default;
+
+        foreach (var stream in streams)
+        {
+            if (Text(stream, "codec_type") == "video" && Int(Child(stream, "disposition"), "attached_pic") != 1)
+            {
+                return stream;
+            }
+        }
+
+        throw new InvalidOperationException($"'{filePath}' contains no video stream.");
+    }
+
+    private static (int Width, int Height) RequireDimensions(string filePath, JsonElement video)
+    {
+        var width = Int(video, "width");
+        var height = Int(video, "height");
+
+        return width > 0 && height > 0
+            ? (width, height)
+            : throw new InvalidOperationException($"'{filePath}' has no usable dimensions ({width}x{height}).");
     }
 
     // The cover image keeps the mobile layout right before playback starts. Best effort: a missing
