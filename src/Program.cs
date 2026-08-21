@@ -2,7 +2,6 @@ using Telegram.Bot;
 using UpDownLoaderBot;
 using UpDownLoaderBot.Media;
 using UpDownLoaderBot.Providers.Instagram;
-using KkInstagramDownloader = UpDownLoaderBot.Providers.Instagram.KkInstagramDownloader;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,11 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 using var startupLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
 var startupLogger = startupLoggerFactory.CreateLogger("UpDownLoaderBot.Startup");
 
-// All application settings live under the "UpDownLoaderBot" section.
 var appConfig = builder.Configuration.GetSection("UpDownLoaderBot");
 
-// Token comes from appsettings.json, or preferably the UpDownLoaderBot__Telegram__Token
-// environment variable, which the default configuration providers overlay automatically.
 var token = appConfig["Telegram:Token"];
 
 if (string.IsNullOrWhiteSpace(token))
@@ -27,32 +23,8 @@ builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(tok
 builder.Services.AddSingleton<TelegramVideoPreparer>();
 builder.Services.Configure<InstagramYtDlpOptions>(appConfig.GetSection("YtDlp"));
 
-// Register the Instagram download strategies enabled by feature flags. Order here is the order
-// the worker tries them: kkinstagram (lightweight HTTP) first, yt-dlp as the robust fallback.
-// Each branch logs itself, so the log shows who is in play before the first download.
 var features = appConfig.GetSection("InstagramDownloaders").Get<InstagramDownloadersOptions>()
                ?? new InstagramDownloadersOptions();
-
-if (features.KkInstagram)
-{
-    startupLogger.LogInformation("{Downloader} enabled.", nameof(KkInstagramDownloader));
-    builder.Services.AddHttpClient(nameof(KkInstagramDownloader));
-    builder.Services.AddSingleton<IInstagramVideoDownloader, KkInstagramDownloader>();
-}
-else
-{
-    startupLogger.LogInformation("{Downloader} disabled.", nameof(KkInstagramDownloader));
-}
-
-if (features.YtDlp)
-{
-    startupLogger.LogInformation("{Downloader} enabled.", nameof(InstagramYtDlpDownloader));
-    builder.Services.AddSingleton<IInstagramVideoDownloader, InstagramYtDlpDownloader>();
-}
-else
-{
-    startupLogger.LogInformation("{Downloader} disabled.", nameof(InstagramYtDlpDownloader));
-}
 
 if (!features.KkInstagram && !features.YtDlp)
 {
@@ -60,6 +32,24 @@ if (!features.KkInstagram && !features.YtDlp)
         "No Instagram download strategy is enabled. Enable at least one of " +
         "UpDownLoaderBot:InstagramDownloaders:YtDlp or UpDownLoaderBot:InstagramDownloaders:KkInstagram.");
 }
+
+startupLogger.LogInformation(
+    "Instagram downloaders: KkInstagram={KkInstagram}, YtDlp={YtDlp}.", features.KkInstagram, features.YtDlp);
+
+// Registration order is the order the worker tries them: kkinstagram (plain HTTP) first, yt-dlp
+// as the fallback.
+if (features.KkInstagram)
+{
+    builder.Services.AddHttpClient(nameof(KkInstagramDownloader));
+    builder.Services.AddSingleton<IInstagramVideoDownloader, KkInstagramDownloader>();
+}
+
+if (features.YtDlp)
+{
+    builder.Services.AddSingleton<IInstagramVideoDownloader, InstagramYtDlpDownloader>();
+}
+
+DownloadFolder.DeleteLeftovers(startupLogger);
 
 builder.Services.AddHostedService<TelegramBotWorker>();
 

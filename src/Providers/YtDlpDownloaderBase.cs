@@ -1,32 +1,35 @@
 namespace UpDownLoaderBot.Providers;
 
 /// <summary>
-///     Generic yt-dlp runner: retry loop, process execution, and output-file resolution.
-///     It knows nothing about any particular site — service-specific arguments (e.g. cookies)
-///     are contributed by subclasses via <see cref="AddServiceArguments" />.
+///     Site-agnostic yt-dlp runner: arguments, retries and picking the produced file out of what it
+///     printed. Anything service-specific (cookies, say) comes from subclasses via
+///     <see cref="AddServiceArguments" />.
 /// </summary>
 public abstract class YtDlpDownloaderBase
 {
-    /// <summary>The yt-dlp executable name, resolved from PATH.</summary>
     private const string Executable = "yt-dlp";
 
-    /// <summary>Directory where downloaded files are written.</summary>
-    private const string OutputDirectory = "downloads";
+    /// <summary>Marks the copy yt-dlp writes to, as in <c>InstagramCookies.session.txt</c>.</summary>
+    private const string SessionSuffix = ".session";
 
-    /// <summary>Maximum time a single yt-dlp invocation may run before it is killed.</summary>
-    private const int TimeoutSeconds = 120;
+    /// <summary>Five minutes: one invocation covers the download itself and an ffmpeg merge.</summary>
+    private const int TimeoutSeconds = 300;
 
-    /// <summary>Number of times a failed download is attempted before giving up.</summary>
-    private const int MaxRetries = 2;
+    /// <summary>A second go at a download that failed on the network rather than on the post.</summary>
+    private const int Attempts = 2;
 
-    /// <summary>Delay between retry attempts, in seconds.</summary>
     private const int RetryDelaySeconds = 5;
 
     /// <summary>
-    ///     Prefers a progressive file that already carries audio, falling back to muxing a
-    ///     video+audio pair. 45 MB is the Bot API's 50 MB limit with headroom; <c>&lt;?</c> keeps
-    ///     formats of unknown size eligible, which is how Instagram reports its progressive ones.
-    ///     A format outside these bounds is refused at upload time, not re-encoded.
+    ///     How far into a post the search for a video goes. Photos count towards the range and are
+    ///     skipped, so a video sitting past the tenth item of a carousel is not looked for.
+    /// </summary>
+    private const int ItemsToScan = 10;
+
+    /// <summary>
+    ///     Prefers a progressive file that already carries audio — Instagram's DASH ladder is
+    ///     VP9-only and reaches ~70 MB, past what a bot may upload. 45 MB is that 50 MB limit with
+    ///     headroom; <c>&lt;?</c> keeps formats of unknown size eligible, as progressive ones are.
     /// </summary>
     private const string FormatSelector = "b[filesize<?45M]/bv*[filesize<?45M]+ba/b/bv*+ba";
 
@@ -37,30 +40,23 @@ public abstract class YtDlpDownloaderBase
         _logger = logger;
     }
 
-    /// <summary>
-    ///     Hook for subclasses to append service-specific yt-dlp arguments (e.g. <c>--cookies</c>).
-    ///     The base class contributes only generic, site-agnostic arguments.
-    /// </summary>
+    /// <summary>Hook for service-specific arguments, such as <c>--cookies</c>.</summary>
     protected virtual void AddServiceArguments(IList<string> arguments)
     {
     }
 
-    public async Task<string> DownloadAsync(string url, CancellationToken cancellationToken)
+    public async Task<string> DownloadVideo(string url, string folder, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(OutputDirectory);
-        // The id alone is not unique enough: yt-dlp reuses an existing file instead of downloading
-        // again, so a leftover from an interrupted run would be sent in place of a fresh download.
-        var outputTemplate = Path.Combine(OutputDirectory, $"%(id)s-{Guid.NewGuid():N}.%(ext)s");
+        var outputTemplate = Path.Combine(folder, "%(id)s.%(ext)s");
 
-        var attempts = Math.Max(1, MaxRetries);
         Exception? lastError = null;
 
-        for (var attempt = 1; attempt <= attempts; attempt++)
+        for (var attempt = 1; attempt <= Attempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                return await RunAsync(url, outputTemplate, cancellationToken);
+                return await RunYtDlp(url, outputTemplate, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -69,31 +65,30 @@ public abstract class YtDlpDownloaderBase
             catch (Exception ex)
             {
                 lastError = ex;
-                _logger.LogWarning(ex, "yt-dlp attempt {Attempt}/{Attempts} failed for {Url}", attempt, attempts, url);
+                _logger.LogWarning(ex, "yt-dlp attempt {Attempt}/{Attempts} failed for {Url}", attempt, Attempts, url);
             }
 
-            // Wait before the next attempt (skip the delay after the final one).
-            if (attempt < attempts && RetryDelaySeconds > 0)
+            if (attempt < Attempts)
             {
                 await Task.Delay(TimeSpan.FromSeconds(RetryDelaySeconds), cancellationToken);
             }
         }
 
-        throw new InvalidOperationException($"yt-dlp failed to download {url} after {attempts} attempt(s).", lastError);
+        throw new InvalidOperationException($"yt-dlp failed to download {url} after {Attempts} attempt(s).", lastError);
     }
 
-    // Builds the full yt-dlp command line: generic arguments, then service-specific ones,
-    // then the options that make yt-dlp print the produced file path to stdout.
     private List<string> BuildArguments(string url, string outputTemplate)
     {
         var arguments = new List<string>
         {
-            // yt-dlp <url> -o "downloads/%(id)s.%(ext)s" --no-playlist
             url,
             "-o", outputTemplate,
-            "--no-playlist",
-            // Instagram's DASH ladder is VP9-only and reaches 1440x2560 / ~70 MB, past what a bot
-            // may upload, while its progressive rendition is a ready-to-send H.264+AAC file.
+            // A carousel is a playlist that --no-playlist does not collapse, so the range is capped
+            // instead. A photo among the videos raises "No video formats found", hence --ignore-errors:
+            // together with --max-downloads that walks the post to its first actual video and stops.
+            "-I", $"1:{ItemsToScan}",
+            "--ignore-errors",
+            "--max-downloads", "1",
             "-f", FormatSelector,
             // For the fallback: cap at 1080p, prefer H.264, take the smaller of equal matches.
             "-S", "res:1080,vcodec:h264,+size",
@@ -102,7 +97,6 @@ public abstract class YtDlpDownloaderBase
 
         AddServiceArguments(arguments);
 
-        // Print the final file path (after any merge/post-processing) to stdout.
         arguments.Add("--no-simulate");
         arguments.Add("--print");
         arguments.Add("after_move:filepath");
@@ -110,38 +104,47 @@ public abstract class YtDlpDownloaderBase
         return arguments;
     }
 
-    private async Task<string> RunAsync(string url, string outputTemplate, CancellationToken cancellationToken)
+    private async Task<string> RunYtDlp(
+        string url,
+        string outputTemplate,
+        CancellationToken cancellationToken)
     {
         _logger.LogInformation("Running yt-dlp for {Url}", url);
 
-        var result = await ProcessRunner.RunAsync(
+        // A non-zero exit is the normal case here: --max-downloads reaching its limit is one (101),
+        // and with --ignore-errors so is a skipped photo. What it printed decides success instead.
+        var result = await ProcessRunner.Run(
             Executable,
             BuildArguments(url, outputTemplate),
             TimeoutSeconds,
-            cancellationToken);
+            cancellationToken,
+            throwOnNonZeroExit: false);
 
         if (!string.IsNullOrEmpty(result.StandardError))
         {
             _logger.LogInformation("yt-dlp stderr: {Stderr}", result.StandardError);
         }
 
-        // The last printed line is the produced file path (see --print).
+        // One printed line per produced file, in playlist order (see --print).
         var filePath = result.StandardOutput
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .LastOrDefault();
+            .FirstOrDefault(File.Exists);
 
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        if (filePath is null)
         {
             throw new InvalidOperationException(
-                $"yt-dlp did not produce a valid output file. stdout: '{result.StandardOutput}'");
+                $"yt-dlp exited with code {result.ExitCode} and produced no output file. "
+                + $"stdout: '{result.StandardOutput}'");
         }
 
-        _logger.LogInformation("Downloaded {Url} -> {FilePath}", url, filePath);
+        _logger.LogInformation(
+            "Downloaded {Url} -> {FilePath} (yt-dlp exit code {ExitCode})", url, filePath, result.ExitCode);
+
         return filePath;
     }
 
-    // Resolves a cookies file: use it as-is if present, otherwise search upward from the app
-    // base directory for the same relative path (e.g. repo-root cookies/InstagramCookies.txt).
+    // Falls back to searching upward from the app base directory, to find repo-root cookies/ in a
+    // local run.
     protected static string? ResolveCookiesFile(string? configured)
     {
         if (string.IsNullOrWhiteSpace(configured))
@@ -154,7 +157,6 @@ public abstract class YtDlpDownloaderBase
             return Path.GetFullPath(configured);
         }
 
-        // Absolute paths are handled above; only relative paths are searched for upward.
         if (Path.IsPathRooted(configured))
         {
             return null;
@@ -176,25 +178,33 @@ public abstract class YtDlpDownloaderBase
     }
 
     /// <summary>
-    ///     Prepares the cookies file that is actually handed to yt-dlp.
-    ///     yt-dlp rewrites its cookies file on exit (that is how a refreshed session is kept), so the
-    ///     deployed file is never used directly — it would fail on a read-only mount, and any renewed
-    ///     session would be thrown away. Instead it is copied to a sibling
-    ///     <c>&lt;name&gt;.session&lt;ext&gt;</c> file that yt-dlp keeps updating in place, so the refreshed
-    ///     session survives restarts. An existing session is kept as-is; deleting it (as the deploy
-    ///     does when new cookies arrive) is what makes the session start over from the deployed file.
+    ///     yt-dlp rewrites its cookies file on exit, which is how a refreshed session is kept — so it
+    ///     works on a copy, <c>&lt;name&gt;.session&lt;ext&gt;</c>, and the deployed file stays intact
+    ///     (it may even be read-only). An existing session is reused; deleting it, as the deploy does
+    ///     when new cookies arrive, is what makes it start over.
     /// </summary>
     protected string PrepareCookiesFile(string deployedFile)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(deployedFile))!;
         var name = Path.GetFileNameWithoutExtension(deployedFile);
         var extension = Path.GetExtension(deployedFile);
-        var sessionFile = Path.Combine(directory, $"{name}.session{extension}");
+
+        // Configured with a session file already — a test pointing IG_COOKIES at one, say. That file
+        // is the writable copy, so deriving another level would only leave a stray
+        // <name>.session.session behind.
+        if (name.EndsWith(SessionSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation(
+                "Cookies file {CookiesFile} is a session copy already; using it as it is.", deployedFile);
+
+            return Path.GetFullPath(deployedFile);
+        }
+
+        var sessionFile = Path.Combine(directory, $"{name}{SessionSuffix}{extension}");
 
         try
         {
-            // A session emptied by an interrupted yt-dlp write (it saves with open(..., 'w'))
-            // is worse than useless: it would authenticate with no cookies at all.
+            // An empty session file, left by an interrupted write, would authenticate with nothing.
             if (File.Exists(sessionFile) && new FileInfo(sessionFile).Length > 0)
             {
                 _logger.LogInformation(
@@ -225,5 +235,4 @@ public abstract class YtDlpDownloaderBase
             return deployedFile;
         }
     }
-
 }

@@ -2,28 +2,32 @@ using System.Diagnostics;
 
 namespace UpDownLoaderBot;
 
-/// <summary>Output of a finished process.</summary>
-public sealed record ProcessResult(string StandardOutput, string StandardError);
+/// <summary>Output of a finished process, both streams trimmed.</summary>
+public sealed record ProcessResult(string StandardOutput, string StandardError, int ExitCode);
 
 /// <summary>
 ///     Runs a command-line tool (yt-dlp, ffmpeg, ffprobe) with a timeout, capturing both streams.
 /// </summary>
 public static class ProcessRunner
 {
-    /// <exception cref="TimeoutException">The tool outlived <paramref name="timeoutSeconds" />.</exception>
-    /// <exception cref="InvalidOperationException">The tool could not start, or exited non-zero.</exception>
-    public static async Task<ProcessResult> RunAsync(
+    /// <param name="arguments">One argument per element; the runtime quotes them.</param>
+    /// <param name="throwOnNonZeroExit">
+    ///     Off where the output still counts — yt-dlp exits non-zero when it stops at its
+    ///     --max-downloads limit, or after skipping a photo entry of a carousel.
+    /// </param>
+    public static async Task<ProcessResult> Run(
         string executable,
         IEnumerable<string> arguments,
         int timeoutSeconds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool throwOnNonZeroExit = true)
     {
         var psi = new ProcessStartInfo
         {
             FileName = executable,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            // Launch directly instead of via the OS shell; required for stream redirection.
+            // Required for stream redirection.
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -50,18 +54,25 @@ public static class ProcessRunner
         {
             await process.WaitForExitAsync(timeoutCts.Token);
         }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
+            // A tool nobody awaits must not keep writing files past the cleanup that follows.
             Kill(process);
-            throw new TimeoutException($"'{executable}' timed out after {timeoutSeconds}s.");
+
+            if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"'{executable}' timed out after {timeoutSeconds}s.");
+            }
+
+            throw;
         }
 
-        var result = new ProcessResult((await stdoutTask).Trim(), (await stderrTask).Trim());
+        var result = new ProcessResult((await stdoutTask).Trim(), (await stderrTask).Trim(), process.ExitCode);
 
-        return process.ExitCode == 0
+        return result.ExitCode == 0 || !throwOnNonZeroExit
             ? result
             : throw new InvalidOperationException(
-                $"'{executable}' exited with code {process.ExitCode}. {result.StandardError}");
+                $"'{executable}' exited with code {result.ExitCode}. {result.StandardError}");
     }
 
     private static void Kill(Process process)

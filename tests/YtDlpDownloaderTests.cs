@@ -9,11 +9,8 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
 {
     private const string ReelUrl = "https://www.instagram.com/reel/DN-wdswgp9n/";
 
-    // Integration test: actually invokes yt-dlp against a live Instagram reel.
-    // Requires yt-dlp on PATH. Instagram needs authentication via cookies:
-    //   - IG_COOKIES=/path/to/cookies.txt, or
-    //   - a cookies/InstagramCookies.txt file in the repository root (auto-detected).
-    // Skipped by default (and in CI, where neither yt-dlp nor cookies exist); run manually.
+    // Hits a live Instagram reel, so it stays skipped; run it by hand with yt-dlp on PATH and
+    // cookies in IG_COOKIES or cookies/InstagramCookies.txt.
     [Fact(Skip = "Integration test: requires yt-dlp on PATH and Instagram cookies; not available in CI.")]
     public async Task Downloads_instagram_reel_to_a_nonempty_file()
     {
@@ -34,7 +31,7 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
         string filePath;
         try
         {
-            filePath = await downloader.DownloadAsync(ReelUrl, cts.Token);
+            filePath = await downloader.DownloadVideo(ReelUrl, Directory.CreateTempSubdirectory("ytdlp-test-").FullName, cts.Token);
         }
         catch (Exception ex)
         {
@@ -114,6 +111,25 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
         CreateDownloader(cookies.DeployedFile);
 
         Assert.Equal("deployed-v2", File.ReadAllText(cookies.SessionFile));
+    }
+
+    [Fact]
+    public void Uses_a_session_file_as_it_is_when_configured_with_one()
+    {
+        using var cookies = new TempCookies("deployed-v1");
+        CreateDownloader(cookies.DeployedFile);
+        File.WriteAllText(cookies.SessionFile, "refreshed-by-ytdlp");
+
+        // Pointed at the session copy itself, as IG_COOKIES may be: deriving another level from it
+        // would leave a stray InstagramCookies.session.session.txt nobody ever reads.
+        CreateDownloader(cookies.SessionFile);
+
+        Assert.Equal(
+            ["InstagramCookies.session.txt", "InstagramCookies.txt"],
+            Directory.GetFiles(Path.GetDirectoryName(cookies.SessionFile)!)
+                .Select(Path.GetFileName)
+                .OrderBy(name => name, StringComparer.Ordinal));
+        Assert.Equal("refreshed-by-ytdlp", File.ReadAllText(cookies.SessionFile));
     }
 
     private static InstagramYtDlpDownloader CreateDownloader(string cookiesFile)

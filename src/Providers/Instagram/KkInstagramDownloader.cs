@@ -8,22 +8,15 @@ namespace UpDownLoaderBot.Providers.Instagram;
 /// </summary>
 public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
 {
-    // The proxy that mirrors Instagram media at the same path under a different host.
     private const string ProxyHost = "https://www.kkinstagram.com";
 
-    // User-Agent sent to the proxy host. The proxy varies its response by client: a crawler/bot
-    // UA gets a 302 straight to the direct video file, while a browser UA is sent to an HTML
-    // landing page. So we deliberately identify as a bot to receive the media redirect.
+    // The proxy varies its response by client: a bot UA is redirected to the video file itself,
+    // a browser UA to an HTML landing page.
     private const string UserAgent = "TelegramBot (like TwitterBot)";
 
-    // Directory where downloaded files are written.
-    private const string OutputDirectory = "downloads";
-
-    // Maximum time a single download may run before it is cancelled.
     private const int TimeoutSeconds = 120;
 
-    // Most a download may write to disk: the Bot API refuses anything over 50 MB anyway, so a
-    // response past this point is either not a reel or not worth finishing.
+    // The Bot API refuses anything over 50 MB, so a response past this point is not worth finishing.
     private const long MaxBytes = 60L * 1024 * 1024;
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -37,18 +30,16 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         _logger = logger;
     }
 
-    public async Task<string> DownloadAsync(string url, CancellationToken cancellationToken)
+    // The proxy answers with a single file, so a carousel post yields at most its first video —
+    // and, as often as not, a cover image that the preparer then refuses.
+    public async Task<string> DownloadVideo(string url, string folder, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(OutputDirectory);
-
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds));
 
         using var request = BuildHttpMessage(url);
         var http = _httpClientFactory.CreateClient(nameof(KkInstagramDownloader));
 
-        // Log the rewritten proxy URL that is actually requested; the original link is
-        // already logged by the caller.
         var requestUrl = request.RequestUri;
 
         _logger.LogInformation("Fetching {Url} via kkinstagram", requestUrl);
@@ -60,20 +51,12 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         var contentType = RequireVideoContentType(response, requestUrl);
         EnsureAnnouncedSizeFits(response, requestUrl);
 
-        var filePath = Path.Combine(OutputDirectory, $"{Guid.NewGuid():N}{ExtensionFor(contentType)}");
+        var filePath = Path.Combine(folder, $"kkinstagram{ExtensionFor(contentType)}");
 
-        try
+        await using (var source = await response.Content.ReadAsStreamAsync(timeoutCts.Token))
+        await using (var file = File.Create(filePath))
         {
-            await using var source = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
-            await using var file = File.Create(filePath);
-
-            await CopyCappedAsync(source, file, requestUrl, timeoutCts.Token);
-        }
-        catch
-        {
-            // A partial file is of no use to anyone, and leaving it would fill the disk over time.
-            TryDelete(filePath);
-            throw;
+            await CopyCapped(source, file, requestUrl, timeoutCts.Token);
         }
 
         _logger.LogInformation(
@@ -83,9 +66,8 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         return filePath;
     }
 
-    // Copies the response with a hard ceiling on what reaches the disk. Content-Length is absent on
-    // a chunked response and can simply be wrong, so the bytes actually written are what counts.
-    private static async Task CopyCappedAsync(
+    // Content-Length is absent on a chunked response and can lie, so the bytes written are what count.
+    private static async Task CopyCapped(
         Stream source,
         Stream destination,
         Uri? requestUrl,
@@ -113,20 +95,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         }
     }
 
-    private void TryDelete(string filePath)
-    {
-        try
-        {
-            File.Delete(filePath);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete the partial download {FilePath}.", filePath);
-        }
-    }
-
-    // The proxy answers a bot user agent with the media file, but a wrong link or an expired one
-    // gets an HTML landing page instead.
+    // A wrong or expired link gets an HTML landing page instead of the file.
     private static string RequireVideoContentType(HttpResponseMessage response, Uri? requestUrl)
     {
         var contentType = response.Content.Headers.ContentType?.MediaType;
@@ -137,8 +106,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
                 $"kkinstagram returned non-video content ('{contentType ?? "unknown"}') for {requestUrl}.");
     }
 
-    // Checked before the body is read: an announced size over the limit saves downloading something
-    // that would be rejected anyway. Absent or untruthful lengths are caught by CopyCappedAsync.
+    // Checked before the body is read; absent or untruthful lengths are left to CopyCapped.
     private static void EnsureAnnouncedSizeFits(HttpResponseMessage response, Uri? requestUrl)
     {
         var announcedBytes = response.Content.Headers.ContentLength;
@@ -151,7 +119,6 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         }
     }
 
-    // Matches the Instagram host (with or without scheme/www) so we can swap it for the proxy.
     [GeneratedRegex(@"^https?://(?:www\.)?instagram\.com", RegexOptions.IgnoreCase)]
     private static partial Regex InstagramHostRegex();
 

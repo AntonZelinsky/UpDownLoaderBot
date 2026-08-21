@@ -10,8 +10,8 @@ public sealed class InstagramYtDlpOptions
 }
 
 /// <summary>
-///     yt-dlp downloader for Instagram. Reuses the generic runner and only adds the Instagram
-///     cookies file, so its authentication never leaks into downloads for other services.
+///     Adds nothing to the generic runner but the Instagram cookies, so this authentication cannot
+///     leak into downloads for other services.
 /// </summary>
 public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase, IInstagramVideoDownloader
 {

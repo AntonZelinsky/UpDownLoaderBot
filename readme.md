@@ -5,6 +5,11 @@ Instagram Reels and sends the video straight back to the chat. Just give it a li
 in a direct message, a group or a channel. When a download fails, the bot reacts to
 the link with 👎.
 
+`/start` — the button Telegram shows on the first visit — answers with a short
+instruction: what to send, where the bot works, and what the 👎 means. It follows the
+language of the Telegram client that asked: Russian, Ukrainian, Polish and Belarusian
+are translated, everyone else gets English.
+
 To use it in a group, make the bot an administrator — no permissions need to be
 granted. Without that, Telegram does not deliver ordinary messages to it, so it
 never sees the link.
@@ -25,14 +30,25 @@ the container, and Kestrel's usual port locally.
 ## How it works
 
 The bot picks a `reel`, `reels`, `p` or `tv` link out of the message and hands it to
-the downloaders in turn, stopping at the first success:
+the downloaders in turn, stopping at the first success. One link means one video: a
+reel or an IGTV post has only one anyway, and of a carousel post the first video is
+what comes back. It arrives as a reply to the link, with the link as its caption.
 
 1. **kkinstagram** — a plain HTTP request to an Instagram mirror. Needs no
-   authentication and returns a ready-made progressive file (H.264 + AAC);
+   authentication and returns a ready-made progressive file (H.264 + AAC). Being one
+   request it returns one file, and for a carousel post that file is usually the cover
+   image of the first video, which the preparer refuses — so those fall through to
+   yt-dlp;
 2. **yt-dlp** — the dependable fallback, and the one that needs
    [Instagram cookies](#instagram-cookies). It asks for the progressive rendition
    too: Instagram's DASH ladder is VP9-only and reaches 1440×2560 at ~70 MB, past
-   the Bot API's limit and unplayable on iOS.
+   the Bot API's limit and unplayable on iOS. A carousel post is a playlist to yt-dlp,
+   and `--no-playlist` does not collapse it — the extractor ignores the flag and walks
+   every entry — so `--max-downloads 1` stops it at the first video it manages to
+   download, `--ignore-errors` lets it step over a photo on the way there
+   (`No video formats found!`) and `-I 1:10` bounds how far into the post it looks.
+   Both of those make yt-dlp exit non-zero on a perfectly good download, so the file
+   it printed, not the exit code, is what decides success.
 
 Either downloader can be switched off with a flag — see [Configuration](#configuration).
 
@@ -44,11 +60,10 @@ comes out squashed. So the bot measures the video itself:
 
 - dimensions are the ones to display, with non-square pixels (SAR) and rotation
   applied;
-- a 320px cover image is taken one second in, which is what the mobile clients use
-  to lay out the player before playback starts;
-- a file that cannot be sent is rejected, and the next downloader gets a turn: not a
-  video (kkinstagram occasionally answers with a still image under a `video/*`
-  content type), not H.264, or larger than 50 MB.
+- a file that cannot be sent is rejected: not a video (kkinstagram occasionally
+  answers with a still image under a `video/*` content type), not H.264, or larger
+  than 50 MB. A rejection is not the end of the request — the next downloader gets
+  a turn.
 
 There is deliberately no re-encoding: both downloaders already return H.264 within
 the limit, so rejection guards against the unexpected rather than being a normal

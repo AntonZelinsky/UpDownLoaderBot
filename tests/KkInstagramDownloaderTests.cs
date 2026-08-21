@@ -6,8 +6,22 @@ using UpDownLoaderBot.Providers.Instagram;
 
 namespace UpDownLoaderBot.Tests;
 
-public class KkInstagramDownloaderTests
+public class KkInstagramDownloaderTests : IDisposable
 {
+    private readonly string _folder = Directory.CreateTempSubdirectory("kkinstagram-tests-").FullName;
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_folder, recursive: true);
+        }
+        catch
+        {
+            /* best effort */
+        }
+    }
+
     private const string ReelUrl = "https://www.instagram.com/reel/DN-wdswgp9n/";
 
     [Fact]
@@ -20,8 +34,7 @@ public class KkInstagramDownloaderTests
             return VideoResponse("video/mp4", [1, 2, 3]);
         });
 
-        var filePath = await CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None);
-        DeleteQuietly(filePath);
+        var filePath = await CreateDownloader(handler).DownloadVideo(ReelUrl, _folder, CancellationToken.None);
 
         Assert.NotNull(captured);
         Assert.Equal("https://www.kkinstagram.com/reel/DN-wdswgp9n/", captured!.RequestUri!.ToString());
@@ -37,8 +50,7 @@ public class KkInstagramDownloaderTests
     {
         var handler = new StubHttpMessageHandler(_ => VideoResponse(mediaType, [1]));
 
-        var filePath = await CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None);
-        DeleteQuietly(filePath);
+        var filePath = await CreateDownloader(handler).DownloadVideo(ReelUrl, _folder, CancellationToken.None);
 
         Assert.Equal(expectedExtension, Path.GetExtension(filePath));
     }
@@ -51,7 +63,7 @@ public class KkInstagramDownloaderTests
             Content = new StringContent("<html>not a video</html>", Encoding.UTF8, "text/html")
         });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateDownloader(handler).DownloadVideo(ReelUrl, _folder, CancellationToken.None));
     }
 
     [Fact]
@@ -65,20 +77,18 @@ public class KkInstagramDownloaderTests
             return response;
         });
 
-        var before = DownloadedFiles();
-
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
+            () => CreateDownloader(handler).DownloadVideo(ReelUrl, _folder, CancellationToken.None));
 
         Assert.Contains("over the 60 MB limit", error.Message);
-        Assert.Equal(before, DownloadedFiles());
+        // Refused before the body was read, so nothing was written at all.
+        Assert.Empty(Directory.GetFiles(_folder));
     }
 
     [Fact]
     public async Task Stops_a_download_that_outgrows_the_limit_without_announcing_it()
     {
-        // No Content-Length at all (as on a chunked response), and far more data than allowed: the
-        // copy has to give up on the bytes it has written rather than fill the disk.
+        // No Content-Length, as on a chunked response, and more data than allowed.
         var handler = new StubHttpMessageHandler(_ =>
         {
             var response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -89,18 +99,11 @@ public class KkInstagramDownloaderTests
             return response;
         });
 
-        var before = DownloadedFiles();
-
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => CreateDownloader(handler).DownloadAsync(ReelUrl, CancellationToken.None));
+            () => CreateDownloader(handler).DownloadVideo(ReelUrl, _folder, CancellationToken.None));
 
         Assert.Contains("sent more than 60 MB", error.Message);
-        // The partial file must be gone, not left behind for nobody to clean up.
-        Assert.Equal(before, DownloadedFiles());
     }
-
-    private static string[] DownloadedFiles() =>
-        Directory.Exists("downloads") ? Directory.GetFiles("downloads") : [];
 
     private static KkInstagramDownloader CreateDownloader(HttpMessageHandler handler)
     {
@@ -118,19 +121,6 @@ public class KkInstagramDownloaderTests
         return response;
     }
 
-    private static void DeleteQuietly(string filePath)
-    {
-        try
-        {
-            File.Delete(filePath);
-        }
-        catch
-        {
-            /* best effort */
-        }
-    }
-
-    // Returns a canned response for every request and records the last request seen.
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
         : HttpMessageHandler
     {

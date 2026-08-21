@@ -1,12 +1,11 @@
 namespace UpDownLoaderBot.Providers.Instagram;
 
-/// <summary>
-///     A strategy for downloading an Instagram video to a local file.
-///     Implementations are enabled independently via feature flags; the worker tries
-///     each enabled one in turn until a download succeeds.
-/// </summary>
+/// <summary>A strategy for downloading an Instagram video to a local file.</summary>
 public interface IInstagramVideoDownloader
 {
-    /// <summary>Downloads the video and returns the full path to the saved file.</summary>
-    Task<string> DownloadAsync(string url, CancellationToken cancellationToken);
+    /// <summary>
+    ///     Returns the saved file: the video of a reel, or the first video of a carousel post.
+    ///     Never returns nothing — a download that produced no video throws instead.
+    /// </summary>
+    Task<string> DownloadVideo(string url, string folder, CancellationToken cancellationToken);
 }

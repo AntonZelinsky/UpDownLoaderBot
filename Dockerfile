@@ -12,7 +12,8 @@ RUN dotnet publish -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 WORKDIR /app
 
-# yt-dlp (arch-independent zipapp, needs python3) + ffmpeg for muxing.
+# yt-dlp (arch-independent zipapp, needs python3); ffmpeg for the stream merges yt-dlp does,
+# ffprobe for reading video metadata.
 # icu-libs: ICU for .NET globalization (Alpine images ship without it).
 # --no-cache leaves no package index behind, so no manual cleanup needed.
 RUN apk add --no-cache ffmpeg python3 ca-certificates icu-libs \

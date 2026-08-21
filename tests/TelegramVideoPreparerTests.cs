@@ -6,10 +6,8 @@ using Xunit.Abstractions;
 namespace UpDownLoaderBot.Tests;
 
 /// <summary>
-///     Exercises <see cref="TelegramVideoPreparer" /> against real files produced by ffmpeg — the
-///     metadata edge cases it exists for cannot be faked. No network or credentials needed, but
-///     ffmpeg/ffprobe must be on PATH; without them each test reports why it did nothing and passes,
-///     so a runner that lacks the tools does not fail the build.
+///     Runs against real files produced by ffmpeg — the metadata edge cases cannot be faked. Needs
+///     no network; without ffmpeg on PATH each test says so and passes, so a bare runner stays green.
 /// </summary>
 public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
 {
@@ -17,7 +15,6 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
 
     private TelegramVideoPreparer Preparer => new(NullLogger<TelegramVideoPreparer>.Instance);
 
-    // Nothing here touches the network, so a generous per-test ceiling only guards against a hung tool.
     private static CancellationTokenSource Timeout => new(TimeSpan.FromMinutes(2));
 
     public void Dispose()
@@ -40,17 +37,14 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
             return;
         }
 
-        // 100x100 stored pixels that are twice as wide as they are tall: the frame must be
-        // reported as 200x100, which is what a player actually shows.
-        var source = await CreateVideoAsync("anamorphic.mp4", "100x100", ["-vf", "setsar=2/1", "-c:v", "libx264"]);
+        // Stored 100x100 with pixels twice as wide as tall, so a player shows 200x100.
+        var source = await CreateVideo("anamorphic.mp4", "100x100", ["-vf", "setsar=2/1", "-c:v", "libx264"]);
 
-        var prepared = await Preparer.PrepareAsync(source, Timeout.Token);
+        var prepared = await Preparer.Prepare(source, Timeout.Token);
 
         Assert.Equal(200, prepared.Width);
         Assert.Equal(100, prepared.Height);
         Assert.Equal(source, prepared.FilePath);
-        Assert.NotNull(prepared.ThumbnailPath);
-        Assert.Equal([source, prepared.ThumbnailPath], prepared.FilesToDelete);
     }
 
     [Fact]
@@ -61,11 +55,11 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
             return;
         }
 
-        var landscape = await CreateVideoAsync("landscape.mp4", "120x80", ["-c:v", "libx264"]);
+        var landscape = await CreateVideo("landscape.mp4", "120x80", ["-c:v", "libx264"]);
         var rotated = Path.Combine(_workDirectory, "rotated.mp4");
-        await RunAsync("ffmpeg", ["-v", "error", "-display_rotation", "90", "-i", landscape, "-c", "copy", "-y", rotated]);
+        await Run("ffmpeg", ["-v", "error", "-display_rotation", "90", "-i", landscape, "-c", "copy", "-y", rotated]);
 
-        var prepared = await Preparer.PrepareAsync(rotated, Timeout.Token);
+        var prepared = await Preparer.Prepare(rotated, Timeout.Token);
 
         // Stored as 120x80, displayed as 80x120 after the quarter turn.
         Assert.Equal(80, prepared.Width);
@@ -82,16 +76,14 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
 
         // What kkinstagram occasionally returns: a JPEG behind a video/* content type, saved as .mp4.
         var image = Path.Combine(_workDirectory, "still.mp4");
-        await RunAsync("ffmpeg",
+        await Run("ffmpeg",
             ["-v", "error", "-f", "lavfi", "-i", "testsrc=size=100x100:rate=1:duration=1", "-frames:v", "1", "-f", "mjpeg", "-y", image]);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Preparer.PrepareAsync(image, Timeout.Token));
+            () => Preparer.Prepare(image, Timeout.Token));
 
         output.WriteLine(error.Message);
         Assert.Contains("still image", error.Message);
-        // A rejected download must not linger: nobody receives a file list to clean up.
-        Assert.False(File.Exists(image), "The rejected file was left on disk");
     }
 
     [Fact]
@@ -103,61 +95,54 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         }
 
         // Padded with trailing zeroes to pass 50 MB cheaply — mp4 readers ignore the tail.
-        var source = await CreateVideoAsync("oversized.mp4", "100x100", ["-c:v", "libx264"]);
-        await PadToAsync(source, 55L * 1024 * 1024);
+        var source = await CreateVideo("oversized.mp4", "100x100", ["-c:v", "libx264"]);
+        await PadTo(source, 55L * 1024 * 1024);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Preparer.PrepareAsync(source, Timeout.Token));
+            () => Preparer.Prepare(source, Timeout.Token));
 
         output.WriteLine(error.Message);
         Assert.Contains("over the 50 MB", error.Message);
-        Assert.False(File.Exists(source), "The rejected file was left on disk");
     }
 
     [Fact]
     public async Task Refuses_a_codec_the_mobile_clients_cannot_play()
     {
-        if (!ToolsAvailable() || !await EncoderAvailableAsync("libvpx-vp9"))
+        if (!ToolsAvailable() || !await EncoderAvailable("libvpx-vp9"))
         {
             output.WriteLine("libvpx-vp9 unavailable; skipped.");
             return;
         }
 
         // Instagram's DASH ladder is VP9-only, and VP9 does not play on iOS.
-        var source = await CreateVideoAsync("vp9.mp4", "100x100", ["-c:v", "libvpx-vp9", "-b:v", "200k"]);
+        var source = await CreateVideo("vp9.mp4", "100x100", ["-c:v", "libvpx-vp9", "-b:v", "200k"]);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Preparer.PrepareAsync(source, Timeout.Token));
+            () => Preparer.Prepare(source, Timeout.Token));
 
         output.WriteLine(error.Message);
         Assert.Contains("not H.264", error.Message);
     }
 
     [Fact]
-    public async Task Produces_a_thumbnail_in_the_same_aspect_ratio()
+    public async Task Reports_the_duration_and_size_telegram_lays_the_player_out_from()
     {
         if (!ToolsAvailable())
         {
             return;
         }
 
-        var source = await CreateVideoAsync("thumb-source.mp4", "360x640", ["-c:v", "libx264"]);
+        var source = await CreateVideo("two-seconds.mp4", "360x640", ["-c:v", "libx264"]);
 
-        var prepared = await Preparer.PrepareAsync(source, Timeout.Token);
+        var prepared = await Preparer.Prepare(source, Timeout.Token);
 
-        Assert.NotNull(prepared.ThumbnailPath);
-        Assert.True(new FileInfo(prepared.ThumbnailPath).Length > 0, "Thumbnail is empty");
-
-        var (width, height) = await DimensionsOfAsync(prepared.ThumbnailPath);
-        // Telegram caps thumbnails at 320px on the long edge, and the ratio must match the video.
-        Assert.Equal(320, height);
-        Assert.Equal(180, width);
         Assert.Equal(2, prepared.Duration);
+        Assert.Equal(360, prepared.Width);
+        Assert.Equal(640, prepared.Height);
     }
 
-    // Renders a test pattern of the given size and duration with a sine audio track; extra
-    // arguments (codec, filters) are appended before the output file.
-    private async Task<string> CreateVideoAsync(
+    // Extra arguments (codec, filters) are appended before the output file.
+    private async Task<string> CreateVideo(
         string fileName,
         string size,
         string[] arguments,
@@ -166,7 +151,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
     {
         var path = Path.Combine(_workDirectory, fileName);
 
-        await RunAsync("ffmpeg",
+        await Run("ffmpeg",
         [
             "-v", "error",
             "-f", "lavfi", "-i", $"testsrc=size={size}:rate={rate}:duration={duration}",
@@ -181,9 +166,8 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         return path;
     }
 
-    // Grows a file to the requested size with trailing zeroes. Cheaper than encoding tens of
-    // megabytes, and mp4 demuxers ignore whatever follows the last box.
-    private static async Task PadToAsync(string filePath, long sizeBytes)
+    // Cheaper than encoding tens of megabytes, and mp4 demuxers ignore what follows the last box.
+    private static async Task PadTo(string filePath, long sizeBytes)
     {
         await using var file = new FileStream(filePath, FileMode.Append);
         var padding = new byte[64 * 1024];
@@ -193,21 +177,8 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         }
     }
 
-    private async Task<string> CodecOfAsync(string filePath) =>
-        (await RunAsync("ffprobe",
-            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", filePath]))
-        .Trim();
-
-    private async Task<(int Width, int Height)> DimensionsOfAsync(string filePath)
-    {
-        var csv = await RunAsync("ffprobe",
-            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", filePath]);
-        var parts = csv.Trim().Split(',');
-        return (int.Parse(parts[0]), int.Parse(parts[1]));
-    }
-
-    private async Task<bool> EncoderAvailableAsync(string encoder) =>
-        (await RunAsync("ffmpeg", ["-v", "error", "-hide_banner", "-encoders"])).Contains(encoder);
+    private async Task<bool> EncoderAvailable(string encoder) =>
+        (await Run("ffmpeg", ["-v", "error", "-hide_banner", "-encoders"])).Contains(encoder);
 
     private bool ToolsAvailable()
     {
@@ -235,7 +206,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         return true;
     }
 
-    private static async Task<string> RunAsync(string executable, IEnumerable<string> arguments)
+    private static async Task<string> Run(string executable, IEnumerable<string> arguments)
     {
         var psi = new ProcessStartInfo
         {
