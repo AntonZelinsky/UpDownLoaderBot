@@ -1,6 +1,7 @@
 using Telegram.Bot;
 using UpDownLoaderBot;
 using UpDownLoaderBot.Bot;
+using UpDownLoaderBot.Core;
 using UpDownLoaderBot.Media;
 using UpDownLoaderBot.Providers.Instagram;
 
@@ -24,6 +25,13 @@ builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(tok
 builder.Services.AddSingleton<TelegramVideoPreparer>();
 builder.Services.Configure<InstagramYtDlpOptions>(appConfig.GetSection("YtDlp"));
 
+// One instance, two roles: a platform to the intake, the Instagram link shapes to the downloaders.
+// Registering the interface separately instead of resolving the class would hand out a second one.
+builder.Services.AddSingleton<InstagramLinks>();
+builder.Services.AddSingleton<IPlatformLinks>(services => services.GetRequiredService<InstagramLinks>());
+builder.Services.AddSingleton<MediaLinkParser>();
+builder.Services.AddSingleton<MediaFetcher>();
+
 var features = appConfig.GetSection("InstagramDownloaders").Get<InstagramDownloadersOptions>()
                ?? new InstagramDownloadersOptions();
 
@@ -37,17 +45,17 @@ if (!features.KkInstagram && !features.YtDlp)
 startupLogger.LogInformation(
     "Instagram downloaders: KkInstagram={KkInstagram}, YtDlp={YtDlp}.", features.KkInstagram, features.YtDlp);
 
-// Registration order is the order the worker tries them: kkinstagram (plain HTTP) first, yt-dlp
-// as the fallback.
+// Registration order is the order MediaFetcher tries them, among those that take the link:
+// kkinstagram (plain HTTP, one-video links only) first, yt-dlp as the fallback for everything else.
 if (features.KkInstagram)
 {
     builder.Services.AddHttpClient(nameof(KkInstagramDownloader));
-    builder.Services.AddSingleton<IInstagramVideoDownloader, KkInstagramDownloader>();
+    builder.Services.AddSingleton<IMediaDownloader, KkInstagramDownloader>();
 }
 
 if (features.YtDlp)
 {
-    builder.Services.AddSingleton<IInstagramVideoDownloader, InstagramYtDlpDownloader>();
+    builder.Services.AddSingleton<IMediaDownloader, InstagramYtDlpDownloader>();
 }
 
 DownloadFolder.DeleteLeftovers(startupLogger);

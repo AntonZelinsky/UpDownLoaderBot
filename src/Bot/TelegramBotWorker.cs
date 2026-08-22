@@ -1,10 +1,8 @@
-using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using UpDownLoaderBot.Media;
-using UpDownLoaderBot.Providers.Instagram;
+using UpDownLoaderBot.Core;
 
 namespace UpDownLoaderBot.Bot;
 
@@ -12,24 +10,30 @@ namespace UpDownLoaderBot.Bot;
 ///     Long-polling worker. <see cref="HandleUpdate" /> only decides what a message is — a command or
 ///     a link — and hands it on; the work itself lives in a method per kind.
 /// </summary>
-public sealed partial class TelegramBotWorker(
-    ITelegramBotClient bot,
-    IEnumerable<IInstagramVideoDownloader> downloaders,
-    TelegramVideoPreparer preparer,
-    ILogger<TelegramBotWorker> logger) : BackgroundService
+public sealed class TelegramBotWorker : BackgroundService
 {
     private const string StartCommand = "/start";
 
-    private readonly IReadOnlyList<IInstagramVideoDownloader> _downloaders = downloaders.ToArray();
+    private readonly ITelegramBotClient _bot;
+    private readonly MediaFetcher _fetcher;
+    private readonly MediaLinkParser _links;
+    private readonly ILogger<TelegramBotWorker> _logger;
 
-    [GeneratedRegex(
-        @"https?://(?:www\.)?instagram\.com/(?:[^\s/]+/)?(?:reel|reels|p|tv)/[A-Za-z0-9_-]+/?",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex SupportedUrlRegex();
+    public TelegramBotWorker(
+        ITelegramBotClient bot,
+        MediaLinkParser links,
+        MediaFetcher fetcher,
+        ILogger<TelegramBotWorker> logger)
+    {
+        _bot = bot;
+        _links = links;
+        _fetcher = fetcher;
+        _logger = logger;
+    }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        bot.StartReceiving(
+        _bot.StartReceiving(
             updateHandler: HandleUpdate,
             errorHandler: HandleError,
             // The bot only reads text out of a new message or a channel post; the rest is traffic we
@@ -37,7 +41,7 @@ public sealed partial class TelegramBotWorker(
             receiverOptions: new ReceiverOptions { AllowedUpdates = [UpdateType.Message, UpdateType.ChannelPost] },
             cancellationToken: stoppingToken);
 
-        logger.LogInformation("Telegram bot started and receiving updates.");
+        _logger.LogInformation("Telegram bot started and receiving updates.");
         return Task.CompletedTask;
     }
 
@@ -60,15 +64,15 @@ public sealed partial class TelegramBotWorker(
             return;
         }
 
-        if (SupportedUrlRegex().Match(text) is { Success: true } match)
+        if (_links.FirstIn(text) is { } link)
         {
-            await HandleVideoRequest(match.Value, message, ct);
+            await HandleMediaRequest(link, message, ct);
         }
     }
 
     private void LogIncomingMessage(Message message, string text)
     {
-        logger.LogInformation(
+        _logger.LogInformation(
             "Incoming message from user {UserId} ({UserName}) in chat {ChatId} ({ChatName}): {Text}",
             message.From?.Id, DescribeUser(message.From), message.Chat.Id, DescribeChat(message.Chat), text);
     }
@@ -90,14 +94,14 @@ public sealed partial class TelegramBotWorker(
     {
         try
         {
-            await bot.SendMessage(
+            await _bot.SendMessage(
                 chatId: message.Chat.Id,
                 text: BotTexts.StartInstructions.For(message.From?.LanguageCode),
                 // The bare instagram.com paths in the text are enough for Telegram to try a preview.
                 linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
                 cancellationToken: ct);
 
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Sent the instructions to chat {ChatId} for client language '{LanguageCode}'",
                 message.Chat.Id, message.From?.LanguageCode);
         }
@@ -107,23 +111,29 @@ public sealed partial class TelegramBotWorker(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send the instructions to chat {ChatId}", message.Chat.Id);
+            _logger.LogError(ex, "Failed to send the instructions to chat {ChatId}", message.Chat.Id);
         }
     }
 
-    private async Task HandleVideoRequest(string url, Message message, CancellationToken ct)
+    private async Task HandleMediaRequest(MediaLink link, Message message, CancellationToken ct)
     {
-        logger.LogInformation("Found URL: {Url}", url);
+        var url = link.Url;
+
+        _logger.LogInformation("Found a {Platform} link: {Url}", link.Platform, url);
 
         // Everything this request downloads lands in here and goes away with it.
-        using var folder = new DownloadFolder(logger);
+        using var folder = new DownloadFolder(_logger);
 
         try
         {
-            await bot.SendChatAction(message.Chat.Id, ChatAction.UploadVideo, cancellationToken: ct);
+            var post = await _fetcher.Fetch(link, folder.FullPath, ct);
 
-            var video = await DownloadAndPrepare(url, folder.FullPath, ct);
-            await SendVideoToChat(message, url, video, ct);
+            // Telegram drops the action after a few seconds, so said before the download it would be
+            // gone by the time the upload — the part that keeps the user waiting — begins.
+            await TryShowChatAction(message, ChatAction.UploadVideo, ct);
+
+            // One video per request for now; the album branch arrives with multi-media.
+            await SendVideoToChat(message, url, post.Media[0], ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -132,40 +142,9 @@ public sealed partial class TelegramBotWorker(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process {Url}", url);
-            await TryReactWithFailure(message, ct);
+            _logger.LogError(ex, "Failed to process {Url}", url);
+            await TryReportFailure(message, ct);
         }
-    }
-
-    // Preparation runs inside the loop so a download that turns out not to be a video — the cover
-    // image kkinstagram serves for a carousel, say — moves on to the next downloader instead of
-    // being sent.
-    private async Task<PreparedVideo> DownloadAndPrepare(string url, string folder, CancellationToken ct)
-    {
-        Exception? lastError = null;
-        foreach (var downloader in _downloaders)
-        {
-            ct.ThrowIfCancellationRequested();
-            var downloaderName = downloader.GetType().Name;
-            try
-            {
-                logger.LogInformation("Trying downloader '{Name}' for {Url}", downloaderName, url);
-                var filePath = await downloader.DownloadVideo(url, folder, ct);
-
-                return await preparer.Prepare(filePath, ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                lastError = ex;
-                logger.LogError(ex, "Downloader '{Name}' failed for {Url}", downloaderName, url);
-            }
-        }
-
-        throw new InvalidOperationException($"All enabled downloaders failed for {url}.", lastError);
     }
 
     private async Task SendVideoToChat(Message message, string url, PreparedVideo video, CancellationToken ct)
@@ -174,7 +153,7 @@ public sealed partial class TelegramBotWorker(
 
         // Dimensions and duration matter: the mobile clients lay the player out from them, and
         // left out they stay zero in the message and the frame gets squashed.
-        await bot.SendVideo(
+        await _bot.SendVideo(
             chatId: message.Chat.Id,
             video: InputFile.FromStream(file, Path.GetFileName(video.FilePath)),
             caption: url,
@@ -185,16 +164,33 @@ public sealed partial class TelegramBotWorker(
             replyParameters: new ReplyParameters { MessageId = message.MessageId },
             cancellationToken: ct);
 
-        logger.LogInformation(
+        _logger.LogInformation(
             "Sent a {Width}x{Height} {Duration}s video for {Url} to chat {ChatId}",
             video.Width, video.Height, video.Duration, url, message.Chat.Id);
     }
 
-    private async Task TryReactWithFailure(Message message, CancellationToken ct)
+    // Decoration: losing it must not cost the video, nor the 👎 that follows.
+    private async Task TryShowChatAction(Message message, ChatAction action, CancellationToken ct)
     {
         try
         {
-            await bot.SetMessageReaction(
+            await _bot.SendChatAction(message.Chat.Id, action, cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Failed to show the '{Action}' action in chat {ChatId}", action, message.Chat.Id);
+        }
+    }
+
+    // Both halves of it: stop promising a video, then 👎 the link. Together, so neither is forgotten.
+    private async Task TryReportFailure(Message message, CancellationToken ct)
+    {
+        await TryShowChatAction(message, ChatAction.Typing, ct);
+
+        try
+        {
+            await _bot.SetMessageReaction(
                 chatId: message.Chat.Id,
                 messageId: message.MessageId,
                 reaction: [new ReactionTypeEmoji { Emoji = "👎" }],
@@ -202,14 +198,14 @@ public sealed partial class TelegramBotWorker(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to react to message {MessageId} in chat {ChatId}",
+            _logger.LogWarning(ex, "Failed to react to message {MessageId} in chat {ChatId}",
                 message.MessageId, message.Chat.Id);
         }
     }
 
     private Task HandleError(ITelegramBotClient _, Exception exception, HandleErrorSource source, CancellationToken ct)
     {
-        logger.LogError(exception, "Polling error from {Source}", source);
+        _logger.LogError(exception, "Polling error from {Source}", source);
         return Task.CompletedTask;
     }
 

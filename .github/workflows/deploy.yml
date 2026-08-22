@@ -29,6 +29,11 @@ jobs:
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
           restore-keys: ${{ runner.os }}-nuget-
 
+      # TelegramVideoPreparerTests and one MediaFetcher test build their fixtures with ffmpeg and
+      # pass without saying much when it is missing, so the runner must not be left to chance.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Test
         run: dotnet test --configuration Release
 

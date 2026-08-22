@@ -1,0 +1,30 @@
+# Keeps the whitespace and brace style of this project from drifting between editors. Style rules
+# that would flag existing code on purpose are left out: the file describes the code, not an ideal.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_size = 4
+
+# Braces on their own line, and always braces — even around a single statement.
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_prefer_braces = true:warning
+
+# System first, as every file already has it.
+dotnet_sort_system_directives_first = true
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+# Two trailing spaces are a line break in Markdown.
+[*.md]
+trim_trailing_whitespace = false

@@ -1,3 +1,5 @@
+using UpDownLoaderBot.Core;
+
 namespace UpDownLoaderBot.Providers;
 
 /// <summary>
@@ -5,7 +7,7 @@ namespace UpDownLoaderBot.Providers;
 ///     printed. Anything service-specific (cookies, say) comes from subclasses via
 ///     <see cref="AddServiceArguments" />.
 /// </summary>
-public abstract class YtDlpDownloaderBase
+public abstract class YtDlpDownloaderBase : IMediaDownloader
 {
     private const string Executable = "yt-dlp";
 
@@ -15,7 +17,10 @@ public abstract class YtDlpDownloaderBase
     /// <summary>Five minutes: one invocation covers the download itself and an ffmpeg merge.</summary>
     private const int TimeoutSeconds = 300;
 
-    /// <summary>A second go at a download that failed on the network rather than on the post.</summary>
+    /// <summary>
+    ///     A second go at a download that failed on the way to the post; one about the post itself
+    ///     stops the loop instead (<see cref="YtDlpFailedException.IsFinal" />).
+    /// </summary>
     private const int Attempts = 2;
 
     private const int RetryDelaySeconds = 5;
@@ -40,27 +45,46 @@ public abstract class YtDlpDownloaderBase
         _logger = logger;
     }
 
+    /// <summary>
+    ///     Left to the subclass on purpose: a downloader added for another service has to say which
+    ///     links are its own, and the compiler asks.
+    /// </summary>
+    public abstract bool CanHandle(MediaLink link);
+
     /// <summary>Hook for service-specific arguments, such as <c>--cookies</c>.</summary>
     protected virtual void AddServiceArguments(IList<string> arguments)
     {
     }
 
-    public async Task<string> DownloadVideo(string url, string folder, CancellationToken cancellationToken)
+    public async Task<DownloadedPost> Download(MediaLink link, string folder, CancellationToken cancellationToken)
     {
-        var outputTemplate = Path.Combine(folder, "%(id)s.%(ext)s");
+        var url = link.Url;
+
+        // The post's id, not yt-dlp's own, so both downloaders name the same link the same way.
+        var outputTemplate = Path.Combine(folder, $"{link.Id}.%(ext)s");
 
         Exception? lastError = null;
+        var attempt = 0;
 
-        for (var attempt = 1; attempt <= Attempts; attempt++)
+        while (attempt < Attempts)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            attempt++;
+
             try
             {
-                return await RunYtDlp(url, outputTemplate, cancellationToken);
+                return new DownloadedPost([await RunYtDlp(url, outputTemplate, cancellationToken)]);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (YtDlpFailedException ex) when (ex.IsFinal)
+            {
+                // A second run would print the same line, and only delay a 👎 already owed.
+                _logger.LogWarning("yt-dlp will not serve {Url}, not retrying: {Reason}", url, ex.Message);
+                lastError = ex;
+                break;
             }
             catch (Exception ex)
             {
@@ -74,7 +98,7 @@ public abstract class YtDlpDownloaderBase
             }
         }
 
-        throw new InvalidOperationException($"yt-dlp failed to download {url} after {Attempts} attempt(s).", lastError);
+        throw new InvalidOperationException($"yt-dlp failed to download {url} after {attempt} attempt(s).", lastError);
     }
 
     private List<string> BuildArguments(string url, string outputTemplate)
@@ -132,9 +156,7 @@ public abstract class YtDlpDownloaderBase
 
         if (filePath is null)
         {
-            throw new InvalidOperationException(
-                $"yt-dlp exited with code {result.ExitCode} and produced no output file. "
-                + $"stdout: '{result.StandardOutput}'");
+            throw new YtDlpFailedException(result.ExitCode, result.StandardOutput, result.StandardError);
         }
 
         _logger.LogInformation(

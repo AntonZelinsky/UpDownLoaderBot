@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using UpDownLoaderBot.Core;
 
 namespace UpDownLoaderBot.Providers.Instagram;
 
@@ -6,7 +7,7 @@ namespace UpDownLoaderBot.Providers.Instagram;
 ///     Downloads an Instagram video by rewriting the link to the kkinstagram proxy host
 ///     and fetching the video file directly over HTTP (no external tooling required).
 /// </summary>
-public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
+public sealed partial class KkInstagramDownloader : IMediaDownloader
 {
     private const string ProxyHost = "https://www.kkinstagram.com";
 
@@ -20,24 +21,32 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
     private const long MaxBytes = 60L * 1024 * 1024;
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly InstagramLinks _links;
     private readonly ILogger<KkInstagramDownloader> _logger;
 
     public KkInstagramDownloader(
         IHttpClientFactory httpClientFactory,
+        InstagramLinks links,
         ILogger<KkInstagramDownloader> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _links = links;
         _logger = logger;
     }
 
-    // The proxy answers with a single file, so a carousel post yields at most its first video —
-    // and, as often as not, a cover image that the preparer then refuses.
-    public async Task<string> DownloadVideo(string url, string folder, CancellationToken cancellationToken)
+    // The proxy answers with a single file, so it takes only links that hold exactly one video: of a
+    // /p/ carousel it would deliver a part, and the fallback would stop there instead of trying yt-dlp.
+    public bool CanHandle(MediaLink link)
+    {
+        return link.Platform == _links.Platform && _links.IsSingleVideo(link);
+    }
+
+    public async Task<DownloadedPost> Download(MediaLink link, string folder, CancellationToken cancellationToken)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds));
 
-        using var request = BuildHttpMessage(url);
+        using var request = BuildHttpMessage(link.Url);
         var http = _httpClientFactory.CreateClient(nameof(KkInstagramDownloader));
 
         var requestUrl = request.RequestUri;
@@ -51,7 +60,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
         var contentType = RequireVideoContentType(response, requestUrl);
         EnsureAnnouncedSizeFits(response, requestUrl);
 
-        var filePath = Path.Combine(folder, $"kkinstagram{ExtensionFor(contentType)}");
+        var filePath = Path.Combine(folder, $"{link.Id}{ExtensionFor(contentType)}");
 
         await using (var source = await response.Content.ReadAsStreamAsync(timeoutCts.Token))
         await using (var file = File.Create(filePath))
@@ -63,7 +72,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
             "Downloaded {Url} via kkinstagram -> {FilePath} ({SizeMb:F1} MB)",
             requestUrl, filePath, new FileInfo(filePath).Length / 1048576.0);
 
-        return filePath;
+        return new DownloadedPost([filePath]);
     }
 
     // Content-Length is absent on a chunked response and can lie, so the bytes written are what count.
@@ -122,7 +131,7 @@ public sealed partial class KkInstagramDownloader : IInstagramVideoDownloader
     [GeneratedRegex(@"^https?://(?:www\.)?instagram\.com", RegexOptions.IgnoreCase)]
     private static partial Regex InstagramHostRegex();
 
-    private HttpRequestMessage BuildHttpMessage(string contentUrl)
+    private static HttpRequestMessage BuildHttpMessage(string contentUrl)
     {
         var url = InstagramHostRegex().Replace(contentUrl, ProxyHost);
         var request = new HttpRequestMessage(HttpMethod.Get, url);

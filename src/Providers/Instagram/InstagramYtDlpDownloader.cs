@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using UpDownLoaderBot.Core;
 
 namespace UpDownLoaderBot.Providers.Instagram;
 
@@ -13,13 +14,19 @@ public sealed class InstagramYtDlpOptions
 ///     Adds nothing to the generic runner but the Instagram cookies, so this authentication cannot
 ///     leak into downloads for other services.
 /// </summary>
-public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase, IInstagramVideoDownloader
+public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase
 {
     private readonly string? _cookiesFile;
+    private readonly InstagramLinks _links;
 
-    public InstagramYtDlpDownloader(IOptions<InstagramYtDlpOptions> options, ILogger<InstagramYtDlpDownloader> logger)
+    public InstagramYtDlpDownloader(
+        IOptions<InstagramYtDlpOptions> options,
+        InstagramLinks links,
+        ILogger<InstagramYtDlpDownloader> logger)
         : base(logger)
     {
+        _links = links;
+
         var deployedFile = ResolveCookiesFile(options.Value.InstagramCookiesFile);
         _cookiesFile = deployedFile is null ? null : PrepareCookiesFile(deployedFile);
 
@@ -39,6 +46,12 @@ public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase, IInstagramVi
                     options.Value.InstagramCookiesFile);
             }
         }
+    }
+
+    // Takes every Instagram link: a carousel is walked to its first video, which the mirror cannot do.
+    public override bool CanHandle(MediaLink link)
+    {
+        return link.Platform == _links.Platform;
     }
 
     // Instagram requires authentication; supply the Instagram cookies file if configured.

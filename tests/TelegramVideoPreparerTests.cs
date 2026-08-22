@@ -9,8 +9,15 @@ namespace UpDownLoaderBot.Tests;
 ///     Runs against real files produced by ffmpeg — the metadata edge cases cannot be faked. Needs
 ///     no network; without ffmpeg on PATH each test says so and passes, so a bare runner stays green.
 /// </summary>
-public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
+public class TelegramVideoPreparerTests : IDisposable
 {
+    private readonly ITestOutputHelper _output;
+
+    public TelegramVideoPreparerTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     private readonly string _workDirectory = Directory.CreateTempSubdirectory("preparer-tests-").FullName;
 
     private TelegramVideoPreparer Preparer => new(NullLogger<TelegramVideoPreparer>.Instance);
@@ -82,7 +89,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => Preparer.Prepare(image, Timeout.Token));
 
-        output.WriteLine(error.Message);
+        _output.WriteLine(error.Message);
         Assert.Contains("still image", error.Message);
     }
 
@@ -101,7 +108,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => Preparer.Prepare(source, Timeout.Token));
 
-        output.WriteLine(error.Message);
+        _output.WriteLine(error.Message);
         Assert.Contains("over the 50 MB", error.Message);
     }
 
@@ -110,7 +117,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
     {
         if (!ToolsAvailable() || !await EncoderAvailable("libvpx-vp9"))
         {
-            output.WriteLine("libvpx-vp9 unavailable; skipped.");
+            _output.WriteLine("libvpx-vp9 unavailable; skipped.");
             return;
         }
 
@@ -120,7 +127,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => Preparer.Prepare(source, Timeout.Token));
 
-        output.WriteLine(error.Message);
+        _output.WriteLine(error.Message);
         Assert.Contains("not H.264", error.Message);
     }
 
@@ -198,7 +205,7 @@ public class TelegramVideoPreparerTests(ITestOutputHelper output) : IDisposable
             }
             catch (Exception ex)
             {
-                output.WriteLine($"{tool} is not available ({ex.Message}); test skipped.");
+                _output.WriteLine($"{tool} is not available ({ex.Message}); test skipped.");
                 return false;
             }
         }

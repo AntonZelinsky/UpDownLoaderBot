@@ -1,16 +1,52 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using UpDownLoaderBot.Core;
 using UpDownLoaderBot.Providers.Instagram;
 using Xunit.Abstractions;
 
 namespace UpDownLoaderBot.Tests;
 
-public class YtDlpDownloaderTests(ITestOutputHelper output)
+public class YtDlpDownloaderTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public YtDlpDownloaderTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     private const string ReelUrl = "https://www.instagram.com/reel/DN-wdswgp9n/";
 
     // Hits a live Instagram reel, so it stays skipped; run it by hand with yt-dlp on PATH and
     // cookies in IG_COOKIES or cookies/InstagramCookies.txt.
+    // The fallback for everything Instagram, carousels included — that is the whole point of it
+    // being the one that runs when the mirror passes on a /p/ link.
+    [Theory]
+    [InlineData("https://www.instagram.com/reel/ABC123/")]
+    [InlineData("https://www.instagram.com/reels/ABC123/")]
+    [InlineData("https://www.instagram.com/p/ABC123/")]
+    [InlineData("https://www.instagram.com/tv/ABC123/")]
+    public void Takes_every_instagram_link(string url)
+    {
+        Assert.True(Downloader().CanHandle(new MediaLink(url, Links.Platform, "ABC123")));
+    }
+
+    [Fact]
+    public void Takes_no_link_of_another_platform()
+    {
+        Assert.False(Downloader().CanHandle(new MediaLink("https://example.com/watch/ABC", "example", "ABC")));
+    }
+
+    private static readonly InstagramLinks Links = new();
+
+    private static InstagramYtDlpDownloader Downloader()
+    {
+        return new InstagramYtDlpDownloader(
+            Options.Create(new InstagramYtDlpOptions()),
+            Links,
+            NullLogger<InstagramYtDlpDownloader>.Instance);
+    }
+
     [Fact(Skip = "Integration test: requires yt-dlp on PATH and Instagram cookies; not available in CI.")]
     public async Task Downloads_instagram_reel_to_a_nonempty_file()
     {
@@ -24,18 +60,21 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
             InstagramCookiesFile = cookiesFile
         };
 
-        var downloader = new InstagramYtDlpDownloader(Options.Create(options), NullLogger<InstagramYtDlpDownloader>.Instance);
+        var downloader = new InstagramYtDlpDownloader(Options.Create(options), Links, NullLogger<InstagramYtDlpDownloader>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 
         string filePath;
         try
         {
-            filePath = await downloader.DownloadVideo(ReelUrl, Directory.CreateTempSubdirectory("ytdlp-test-").FullName, cts.Token);
+            var link = new MediaLink(ReelUrl, Links.Platform, "DN-wdswgp9n");
+            var downloaded = await downloader.Download(
+                link, Directory.CreateTempSubdirectory("ytdlp-test-").FullName, cts.Token);
+            filePath = downloaded.Files.Single();
         }
         catch (Exception ex)
         {
-            output.WriteLine(ex.ToString());
+            _output.WriteLine(ex.ToString());
             throw;
         }
 
@@ -43,7 +82,7 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
         {
             Assert.True(File.Exists(filePath), $"Expected a downloaded file at {filePath}");
             Assert.True(new FileInfo(filePath).Length > 0, "Downloaded file is empty");
-            output.WriteLine($"Downloaded {new FileInfo(filePath).Length} bytes to {filePath}");
+            _output.WriteLine($"Downloaded {new FileInfo(filePath).Length} bytes to {filePath}");
         }
         finally
         {
@@ -135,7 +174,7 @@ public class YtDlpDownloaderTests(ITestOutputHelper output)
     private static InstagramYtDlpDownloader CreateDownloader(string cookiesFile)
     {
         var options = Options.Create(new InstagramYtDlpOptions { InstagramCookiesFile = cookiesFile });
-        return new InstagramYtDlpDownloader(options, NullLogger<InstagramYtDlpDownloader>.Instance);
+        return new InstagramYtDlpDownloader(options, Links, NullLogger<InstagramYtDlpDownloader>.Instance);
     }
 
     // Walks up from the test binary to find cookies/InstagramCookies.txt in the repo root.

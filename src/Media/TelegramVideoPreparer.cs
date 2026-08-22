@@ -1,29 +1,27 @@
 using System.Text.Json;
+using UpDownLoaderBot.Core;
 
 namespace UpDownLoaderBot.Media;
-
-/// <summary>
-///     A downloaded video described the way Telegram needs it. Width and height are the ones to
-///     display, with pixel aspect ratio and rotation applied.
-/// </summary>
-public sealed record PreparedVideo(
-    string FilePath,
-    int Width,
-    int Height,
-    int Duration);
 
 /// <summary>
 ///     Measures a downloaded file so Telegram renders it correctly, and rejects what it cannot send.
 ///     The Bot API never inspects an upload: without width/height the mobile clients lay the player
 ///     out from a message that says zero, and the frame comes out squashed.
 /// </summary>
-public sealed class TelegramVideoPreparer(ILogger<TelegramVideoPreparer> logger)
+public sealed class TelegramVideoPreparer
 {
     /// <summary>The Bot API's upload ceiling for a bot's own files: 50 MB.</summary>
     private const long UploadLimitBytes = 50L * 1024 * 1024;
 
     /// <summary>Ceiling for one ffprobe run: 5 minutes.</summary>
     private const int ToolTimeoutSeconds = 300;
+
+    private readonly ILogger<TelegramVideoPreparer> _logger;
+
+    public TelegramVideoPreparer(ILogger<TelegramVideoPreparer> logger)
+    {
+        _logger = logger;
+    }
 
     /// <summary>Throws when the file cannot be sent as it is, so the caller can try another source.</summary>
     public async Task<PreparedVideo> Prepare(string filePath, CancellationToken cancellationToken)
@@ -38,7 +36,7 @@ public sealed class TelegramVideoPreparer(ILogger<TelegramVideoPreparer> logger)
 
         var durationSeconds = probed.Format?.DurationSeconds ?? 0;
 
-        logger.LogInformation(
+        _logger.LogInformation(
             "Prepared {FilePath}: {Width}x{Height}, {Duration:F0}s, {SizeMb:F1} MB.",
             filePath, video.DisplayWidth, video.DisplayHeight, durationSeconds, sizeBytes / 1048576.0);
 
