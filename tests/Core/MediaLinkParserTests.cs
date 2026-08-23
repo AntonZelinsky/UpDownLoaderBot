@@ -1,7 +1,7 @@
 using UpDownLoaderBot.Core;
 using UpDownLoaderBot.Providers.Instagram;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Core;
 
 /// <summary>The intake, against the real Instagram patterns.</summary>
 public class MediaLinkParserTests

@@ -1,6 +1,6 @@
-using UpDownLoaderBot.Providers;
+using UpDownLoaderBot.Tools.YtDlp;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Tools.YtDlp;
 
 /// <summary>
 ///     Telling "try again" from "no point trying" — the classification reads yt-dlp's prose, so what

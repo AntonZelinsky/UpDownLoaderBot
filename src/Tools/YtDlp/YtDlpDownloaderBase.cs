@@ -1,6 +1,6 @@
 using UpDownLoaderBot.Core;
 
-namespace UpDownLoaderBot.Providers;
+namespace UpDownLoaderBot.Tools.YtDlp;
 
 /// <summary>
 ///     Site-agnostic yt-dlp runner: arguments, retries and picking the produced file out of what it

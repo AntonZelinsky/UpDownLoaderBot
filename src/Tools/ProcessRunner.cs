@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace UpDownLoaderBot;
+namespace UpDownLoaderBot.Tools;
 
 /// <summary>Output of a finished process, both streams trimmed.</summary>
 public sealed record ProcessResult(string StandardOutput, string StandardError, int ExitCode);

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 
-namespace UpDownLoaderBot.Media;
+namespace UpDownLoaderBot.Tools.Ffprobe;
 
 /// <summary>
 ///     What <c>ffprobe -print_format json -show_streams -show_format</c> prints, as much of it as this

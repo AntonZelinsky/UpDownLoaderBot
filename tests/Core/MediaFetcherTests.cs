@@ -1,10 +1,10 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using UpDownLoaderBot.Core;
-using UpDownLoaderBot.Media;
+using UpDownLoaderBot.Tests.Support;
+using UpDownLoaderBot.Tools.Ffprobe;
 using Xunit.Abstractions;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Core;
 
 /// <summary>
 ///     The fallback between downloaders. Runs against the real preparer, so no seam is needed in
@@ -183,23 +183,15 @@ public class MediaFetcherTests : IDisposable
         var path = Path.Combine(_folder, fileName);
         try
         {
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                ArgumentList =
-                {
-                    "-v", "error",
-                    "-f", "lavfi", "-i", "testsrc=size=120x80:rate=30:duration=1",
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                    "-y", path
-                },
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            })!;
-            await process.WaitForExitAsync();
+            await Ffmpeg.Run("ffmpeg",
+            [
+                "-v", "error",
+                "-f", "lavfi", "-i", "testsrc=size=120x80:rate=30:duration=1",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-y", path
+            ]);
 
-            return process.ExitCode == 0 && File.Exists(path) ? path : null;
+            return File.Exists(path) ? path : null;
         }
         catch (Exception ex)
         {

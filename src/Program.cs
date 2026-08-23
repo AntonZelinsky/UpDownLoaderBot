@@ -1,9 +1,9 @@
 using Telegram.Bot;
-using UpDownLoaderBot;
 using UpDownLoaderBot.Bot;
 using UpDownLoaderBot.Core;
-using UpDownLoaderBot.Media;
 using UpDownLoaderBot.Providers.Instagram;
+using UpDownLoaderBot.Tools;
+using UpDownLoaderBot.Tools.Ffprobe;
 
 var builder = WebApplication.CreateBuilder(args);
 

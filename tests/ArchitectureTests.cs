@@ -27,12 +27,19 @@ public class ArchitectureTests
         Assert.Empty(offenders);
     }
 
-    /// <summary>Core and nothing below it: no downloader, no ffprobe, no platform.</summary>
+    /// <summary>
+    ///     Core, and of the infrastructure only the request's folder: no downloader, no ffprobe, no
+    ///     platform. The folder makes <c>using UpDownLoaderBot.Tools</c> legal here, and that import
+    ///     opens ProcessRunner along with it, so the runner is kept out by name.
+    /// </summary>
     [Fact]
     public void The_bot_layer_reaches_for_the_core_layer_only()
     {
         string[] offLimits =
-            ["using UpDownLoaderBot.Providers", "using UpDownLoaderBot.Media", "ProcessRunner"];
+        [
+            "using UpDownLoaderBot.Providers", "using UpDownLoaderBot.Tools.Ffprobe",
+            "using UpDownLoaderBot.Tools.YtDlp", "ProcessRunner"
+        ];
 
         var offenders = SourceFiles()
             .Where(file => Layer(file) == "Bot")
@@ -60,23 +67,32 @@ public class ArchitectureTests
         Assert.Empty(offenders);
     }
 
-    /// <summary>
-    ///     Media, holding the preparer, is the one it may reach for. ProcessRunner and DownloadFolder
-    ///     live in the root namespace, which a child sees without a using, so they are named outright
-    ///     rather than looked for among the imports.
-    /// </summary>
+    /// <summary>Tools.Ffprobe, holding the preparer, is the one piece it may reach for.</summary>
     [Fact]
     public void The_core_layer_reaches_for_one_piece_of_infrastructure_only()
     {
-        string[] offLimits = ["ProcessRunner", "DownloadFolder"];
-
         var offenders = CoreFiles()
             .SelectMany(file => File.ReadAllLines(file.FullName).Select(line => (file, line: line.Trim())))
-            .Where(source =>
-                (source.line.StartsWith("using UpDownLoaderBot", StringComparison.Ordinal)
-                 && source.line.TrimEnd(';') != "using UpDownLoaderBot.Media")
-                || offLimits.Any(name => source.line.Contains(name, StringComparison.Ordinal)))
+            .Where(source => source.line.StartsWith("using UpDownLoaderBot", StringComparison.Ordinal)
+                             && source.line.TrimEnd(';') != "using UpDownLoaderBot.Tools.Ffprobe")
             .Select(source => $"{Describe(source.file)}: {source.line}")
+            .ToArray();
+
+        Assert.Empty(offenders);
+    }
+
+    /// <summary>
+    ///     Cleanup lives in exactly one <c>using</c> in the worker, so a downloader or the preparer
+    ///     that reached for the folder could delete files another stage is still reading. Inside
+    ///     Tools/ the type is visible by nesting rather than by an import, hence a check by name.
+    /// </summary>
+    [Fact]
+    public void Only_the_bot_layer_names_the_download_folder()
+    {
+        var offenders = SourceFiles()
+            .Where(file => file.Name != "DownloadFolder.cs" && !IsBotLayer(file))
+            .Where(file => File.ReadAllText(file.FullName).Contains("DownloadFolder", StringComparison.Ordinal))
+            .Select(Describe)
             .ToArray();
 
         Assert.Empty(offenders);

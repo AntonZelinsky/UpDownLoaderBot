@@ -1,4 +1,4 @@
-using UpDownLoaderBot.Media;
+using UpDownLoaderBot.Tools.Ffprobe;
 
 namespace UpDownLoaderBot.Core;
 

@@ -1,6 +1,6 @@
 using UpDownLoaderBot.Bot;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Bot;
 
 public class LocalizedTextTests
 {

@@ -1,7 +1,7 @@
 using System.Text.Json;
-using UpDownLoaderBot.Media;
+using UpDownLoaderBot.Tools.Ffprobe;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Tools.Ffprobe;
 
 /// <summary>
 ///     How ffprobe's output reads once deserialized, absences included — the preparer trusts these

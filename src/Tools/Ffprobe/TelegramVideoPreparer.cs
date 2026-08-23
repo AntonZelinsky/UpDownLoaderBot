@@ -1,7 +1,7 @@
 using System.Text.Json;
 using UpDownLoaderBot.Core;
 
-namespace UpDownLoaderBot.Media;
+namespace UpDownLoaderBot.Tools.Ffprobe;
 
 /// <summary>
 ///     Measures a downloaded file so Telegram renders it correctly, and rejects what it cannot send.

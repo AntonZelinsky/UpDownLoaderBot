@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using UpDownLoaderBot.Core;
 using UpDownLoaderBot.Providers.Instagram;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Providers.Instagram;
 
 public class KkInstagramDownloaderTests : IDisposable
 {

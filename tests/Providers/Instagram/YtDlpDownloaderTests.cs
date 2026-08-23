@@ -4,7 +4,7 @@ using UpDownLoaderBot.Core;
 using UpDownLoaderBot.Providers.Instagram;
 using Xunit.Abstractions;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Providers.Instagram;
 
 public class YtDlpDownloaderTests
 {

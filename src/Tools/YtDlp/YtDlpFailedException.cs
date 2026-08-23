@@ -1,4 +1,4 @@
-namespace UpDownLoaderBot.Providers;
+namespace UpDownLoaderBot.Tools.YtDlp;
 
 /// <summary>
 ///     yt-dlp finished without producing a file. <see cref="IsFinal" /> says whether another attempt

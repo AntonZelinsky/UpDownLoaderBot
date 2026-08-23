@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace UpDownLoaderBot;
+namespace UpDownLoaderBot.Tools;
 
 /// <summary>
 ///     A directory of its own for everything one request downloads — the video and whatever yt-dlp

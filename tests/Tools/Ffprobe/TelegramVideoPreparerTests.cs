@@ -1,9 +1,9 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
-using UpDownLoaderBot.Media;
+using UpDownLoaderBot.Tests.Support;
+using UpDownLoaderBot.Tools.Ffprobe;
 using Xunit.Abstractions;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Tools.Ffprobe;
 
 /// <summary>
 ///     Runs against real files produced by ffmpeg — the metadata edge cases cannot be faked. Needs
@@ -184,56 +184,20 @@ public class TelegramVideoPreparerTests : IDisposable
         }
     }
 
-    private async Task<bool> EncoderAvailable(string encoder) =>
-        (await Run("ffmpeg", ["-v", "error", "-hide_banner", "-encoders"])).Contains(encoder);
+    private static Task<bool> EncoderAvailable(string encoder) => Ffmpeg.EncoderAvailable(encoder);
 
     private bool ToolsAvailable()
     {
-        foreach (var tool in (string[])["ffmpeg", "ffprobe"])
+        if (Ffmpeg.Unavailable() is not { } reason)
         {
-            try
-            {
-                using var process = Process.Start(new ProcessStartInfo
-                {
-                    FileName = tool,
-                    ArgumentList = { "-version" },
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false
-                });
-                process!.WaitForExit();
-            }
-            catch (Exception ex)
-            {
-                _output.WriteLine($"{tool} is not available ({ex.Message}); test skipped.");
-                return false;
-            }
+            return true;
         }
 
-        return true;
+        _output.WriteLine(reason);
+
+        return false;
     }
 
-    private static async Task<string> Run(string executable, IEnumerable<string> arguments)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = executable,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        foreach (var argument in arguments)
-        {
-            psi.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(psi)!;
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-
-        return process.ExitCode == 0
-            ? stdout
-            : throw new InvalidOperationException($"{executable} failed ({process.ExitCode}): {stderr}");
-    }
+    private static Task<string> Run(string executable, IEnumerable<string> arguments) =>
+        Ffmpeg.Run(executable, arguments);
 }

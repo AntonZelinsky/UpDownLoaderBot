@@ -1,7 +1,8 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
+using UpDownLoaderBot.Tools;
 
-namespace UpDownLoaderBot.Tests;
+namespace UpDownLoaderBot.Tests.Tools;
 
 public class DownloadFolderTests
 {
