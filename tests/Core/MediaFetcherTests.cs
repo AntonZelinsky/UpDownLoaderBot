@@ -149,7 +149,9 @@ public class MediaFetcherTests : IDisposable
     [Fact]
     public async Task Stops_at_the_first_downloader_whose_file_can_be_sent()
     {
-        if (await CreateVideo("ABC123.mp4") is not { } video)
+        var video = await CreateVideo("ABC123.mp4");
+
+        if (video is null)
         {
             _output.WriteLine("ffmpeg is not available; test skipped.");
             return;
@@ -167,7 +169,9 @@ public class MediaFetcherTests : IDisposable
 
     private Task<PreparedPost> Fetch(params StubDownloader[] downloaders)
     {
-        return Fetcher(downloaders).Fetch(Reel, _folder, CancellationToken.None);
+        var fetcher = Fetcher(downloaders);
+
+        return fetcher.Fetch(Reel, _folder, CancellationToken.None);
     }
 
     private static MediaFetcher Fetcher(params StubDownloader[] downloaders)
@@ -256,7 +260,9 @@ public class MediaFetcherTests : IDisposable
             Calls++;
             LastFolder = folder;
 
-            return Task.FromResult(_download(folder));
+            var downloaded = _download(folder);
+
+            return Task.FromResult(downloaded);
         }
     }
 }

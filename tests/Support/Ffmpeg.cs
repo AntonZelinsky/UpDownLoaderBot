@@ -41,7 +41,9 @@ public static class Ffmpeg
     /// <summary>Which encoders a build ships with is not fixed, so a test wanting one asks first.</summary>
     public static async Task<bool> EncoderAvailable(string encoder)
     {
-        return (await Run("ffmpeg", ["-v", "error", "-hide_banner", "-encoders"])).Contains(encoder);
+        var encoders = await Run("ffmpeg", ["-v", "error", "-hide_banner", "-encoders"]);
+
+        return encoders.Contains(encoder);
     }
 
     public static async Task<string> Run(string executable, IEnumerable<string> arguments)

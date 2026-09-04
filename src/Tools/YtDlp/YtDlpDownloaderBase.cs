@@ -51,6 +51,14 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
     /// </summary>
     public abstract bool CanHandle(MediaLink link);
 
+    /// <summary>
+    ///     How yt-dlp ranks what the selector left. The codec comes before the resolution because the
+    ///     preparer refuses anything but H.264 outright, so a higher rendition in another codec is not
+    ///     a better one — it is an unsendable one. Then the tallest up to 1080p, then the smaller of
+    ///     equal matches. A service offering one resolution at several bitrates wants a sort of its own.
+    /// </summary>
+    protected virtual string FormatSort => "vcodec:h264,res:1080,+size";
+
     /// <summary>Hook for service-specific arguments, such as <c>--cookies</c>.</summary>
     protected virtual void AddServiceArguments(IList<string> arguments)
     {
@@ -73,7 +81,9 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
 
             try
             {
-                return new DownloadedPost([await RunYtDlp(url, outputTemplate, cancellationToken)]);
+                var filePath = await RunYtDlp(url, outputTemplate, cancellationToken);
+
+                return new DownloadedPost([filePath]);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -114,8 +124,12 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
             "--ignore-errors",
             "--max-downloads", "1",
             "-f", FormatSelector,
-            // For the fallback: cap at 1080p, prefer H.264, take the smaller of equal matches.
-            "-S", "res:1080,vcodec:h264,+size",
+            "-S", FormatSort,
+            // The file is named after the post, so a mirror that ran first and left one — a partial
+            // write, or a whole file the preparer then refused — sits under exactly the name yt-dlp is
+            // about to use, and it would reuse it and print its path as a success. That hands the
+            // refused file straight back and defeats the fallback the loop exists for.
+            "--force-overwrites",
             "--merge-output-format", "mp4"
         };
 
@@ -137,12 +151,10 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
 
         // A non-zero exit is the normal case here: --max-downloads reaching its limit is one (101),
         // and with --ignore-errors so is a skipped photo. What it printed decides success instead.
+        var arguments = BuildArguments(url, outputTemplate);
+
         var result = await ProcessRunner.Run(
-            Executable,
-            BuildArguments(url, outputTemplate),
-            TimeoutSeconds,
-            cancellationToken,
-            throwOnNonZeroExit: false);
+            Executable, arguments, TimeoutSeconds, cancellationToken, throwOnNonZeroExit: false);
 
         if (!string.IsNullOrEmpty(result.StandardError))
         {

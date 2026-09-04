@@ -55,8 +55,9 @@ public sealed class TelegramVideoPreparer
             ToolTimeoutSeconds,
             cancellationToken);
 
-        return JsonSerializer.Deserialize<FfprobeOutput>(result.StandardOutput)
-               ?? throw new InvalidOperationException($"ffprobe printed no description of '{filePath}'.");
+        var probed = JsonSerializer.Deserialize<FfprobeOutput>(result.StandardOutput);
+
+        return probed ?? throw new InvalidOperationException($"ffprobe printed no description of '{filePath}'.");
     }
 
     // A single-frame image is a video stream too; the format name (jpeg_pipe, png_pipe, …) tells.
@@ -73,8 +74,9 @@ public sealed class TelegramVideoPreparer
 
     private static FfprobeStream RequireVideoStream(string filePath, IReadOnlyList<FfprobeStream>? streams)
     {
-        return streams?.FirstOrDefault(stream => stream.IsVideo && !stream.IsAttachedPicture)
-               ?? throw new InvalidOperationException($"'{filePath}' contains no video stream.");
+        var video = streams?.FirstOrDefault(stream => stream.IsVideo && !stream.IsAttachedPicture);
+
+        return video ?? throw new InvalidOperationException($"'{filePath}' contains no video stream.");
     }
 
     private static void EnsureMeasurable(string filePath, FfprobeStream video)

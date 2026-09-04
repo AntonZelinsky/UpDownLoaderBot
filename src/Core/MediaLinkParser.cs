@@ -1,9 +1,10 @@
 namespace UpDownLoaderBot.Core;
 
 /// <summary>
-///     Asks each platform in turn; the first to recognize something wins. Arbitrating between two
-///     links of different platforms will need each match's position — a question for when a second
-///     platform exists, not a guess now.
+///     Asks each platform in turn; the first to recognize something wins, which makes registration
+///     order the arbiter when a message carries links of two platforms. Deciding by position in the
+///     text instead would need each match's offset, which <see cref="IPlatformLinks.Find" /> does not
+///     report — a deliberate simplification rather than the intended answer.
 /// </summary>
 public sealed class MediaLinkParser
 {

@@ -67,7 +67,10 @@ public static class ProcessRunner
             throw;
         }
 
-        var result = new ProcessResult((await stdoutTask).Trim(), (await stderrTask).Trim(), process.ExitCode);
+        var standardOutput = await stdoutTask;
+        var standardError = await stderrTask;
+
+        var result = new ProcessResult(standardOutput.Trim(), standardError.Trim(), process.ExitCode);
 
         return result.ExitCode == 0 || !throwOnNonZeroExit
             ? result

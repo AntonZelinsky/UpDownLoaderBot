@@ -65,7 +65,7 @@ public class MediaLinkParserTests
     [InlineData("https://www.instagram.com/someuser/")]
     [InlineData("https://www.instagram.com/stories/someuser/123456/")]
     [InlineData("https://www.instagram.com/")]
-    [InlineData("https://www.tiktok.com/@someone/video/123456")]
+    [InlineData("https://www.youtube.com/watch?v=dQw4w9WgXcQ")]
     public void Ignores_text_carrying_nothing_it_answers(string text)
     {
         Assert.Null(Parser.FirstIn(text));

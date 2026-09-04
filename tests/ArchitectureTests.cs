@@ -38,7 +38,7 @@ public class ArchitectureTests
         string[] offLimits =
         [
             "using UpDownLoaderBot.Providers", "using UpDownLoaderBot.Tools.Ffprobe",
-            "using UpDownLoaderBot.Tools.YtDlp", "ProcessRunner"
+            "using UpDownLoaderBot.Tools.Http", "using UpDownLoaderBot.Tools.YtDlp", "ProcessRunner"
         ];
 
         var offenders = SourceFiles()

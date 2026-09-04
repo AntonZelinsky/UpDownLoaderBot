@@ -40,7 +40,7 @@ public sealed class MediaFetcher
             var name = downloader.GetType().Name;
             if (!downloader.CanHandle(link))
             {
-                _logger.LogInformation("Downloader '{Name}' does not take {Url}", name, link.Url);
+                _logger.LogDebug("Downloader '{Name}' does not take {Url}", name, link.Url);
                 continue;
             }
 
@@ -101,7 +101,9 @@ public sealed class MediaFetcher
         {
             try
             {
-                media.Add(await _preparer.Prepare(file, cancellationToken));
+                var prepared = await _preparer.Prepare(file, cancellationToken);
+
+                media.Add(prepared);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

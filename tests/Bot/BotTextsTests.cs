@@ -67,6 +67,8 @@ public class BotTextsTests
         Assert.Contains("instagram.com/reel/", text);
         Assert.Contains("/p/", text);
         Assert.Contains("/tv/", text);
+        Assert.Contains("tiktok.com/@", text);
+        Assert.Contains("vm.tiktok.com/", text);
         Assert.Contains("👎", text);
     }
 }

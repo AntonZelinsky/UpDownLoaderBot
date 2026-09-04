@@ -1,7 +1,7 @@
 # UpDownLoaderBot
 
 [@UpDownLoaderBot](https://t.me/UpDownLoaderBot) — a Telegram bot that downloads
-Instagram Reels and sends the video straight back to the chat. Just give it a link,
+Instagram Reels and TikTok videos and sends them straight back to the chat. Just give it a link,
 in a direct message, a group or a channel. When a download fails, the bot reacts to
 the link with 👎.
 
@@ -29,16 +29,28 @@ the container, and Kestrel's usual port locally.
 
 ## How it works
 
-The bot picks a `reel`, `reels`, `p` or `tv` link out of the message and hands it to
-the downloaders in turn, stopping at the first success. One link means one video: a
-reel or an IGTV post has only one anyway, and of a carousel post the first video is
-what comes back. It arrives as a reply to the link, with the link as its caption.
+The bot picks the first link it recognizes out of the message — an Instagram `reel`,
+`reels`, `p` or `tv` link, or any TikTok link — `/@user/video/`, `/@user/photo/`,
+`/share/video/`, a short `vm.`/`vt.tiktok.com` or `/t/` one, a TikTok Lite or
+`tiktokv.com` share link, or an old `/embed/` or `/v/….html` one — and hands it to the downloaders that take that link, in turn,
+stopping at the first success. One link means one video: a reel, an IGTV post and a
+TikTok video have only one anyway, and of an Instagram carousel the first video is what
+comes back. It arrives as a reply to the link, with the link as its caption, and named
+after the post.
+
+A downloader decides for itself whether a link is its business, and claims only links
+whose content it can deliver whole — otherwise it would answer with a part of a post and
+the one that could have returned all of it would never run.
+
+Each platform has the same pair: a mirror that answers a rewritten link with the video
+file itself, and yt-dlp behind it.
+
+**Instagram**
 
 1. **kkinstagram** — a plain HTTP request to an Instagram mirror. Needs no
    authentication and returns a ready-made progressive file (H.264 + AAC). Being one
-   request it returns one file, and for a carousel post that file is usually the cover
-   image of the first video, which the preparer refuses — so those fall through to
-   yt-dlp;
+   request it returns one file, so it takes only the links that hold exactly one video:
+   `reel`, `reels` and `tv`. A `p` post may be a carousel, and goes straight to yt-dlp;
 2. **yt-dlp** — the dependable fallback, and the one that needs
    [Instagram cookies](#instagram-cookies). It asks for the progressive rendition
    too: Instagram's DASH ladder is VP9-only and reaches 1440×2560 at ~70 MB, past
@@ -50,7 +62,18 @@ what comes back. It arrives as a reply to the link, with the link as its caption
    Both of those make yt-dlp exit non-zero on a perfectly good download, so the file
    it printed, not the exit code, is what decides success.
 
-Either downloader can be switched off with a flag — see [Configuration](#configuration).
+**TikTok** — no cookies at either step, so nothing has to be kept up to date for it.
+
+1. **tnktok** — the same trick against `d.tnktok.com`, which answers a bot User-Agent
+   with the H.264 file. Only the host is swapped, short links included — the mirror
+   follows `vm.tiktok.com/…` itself — so this is the fast path for every shape but a
+   `/photo/` slideshow, which holds no video at all;
+2. **yt-dlp** — the fallback, which takes every TikTok link. TikTok offers its 720p
+   rendition in H.265 only, which the Bot API's clients cannot be relied on to play and
+   the bot refuses, so the format sort asks for H.264 before it asks for height.
+
+Any of the four downloaders can be switched off with a flag — see
+[Configuration](#configuration).
 
 Before the upload, the file goes through `ffprobe`. The reason is that the Bot API
 never inspects what a bot uploads: leave out `width`, `height` and `duration` and
@@ -149,14 +172,27 @@ reading it on the host takes `sudo`.
 
 Settings live under the `UpDownLoaderBot` section of `src/appsettings.json`. Any of
 them can be overridden by an environment variable that spells the nesting with
-double underscores (`UpDownLoaderBot__Telegram__Token`) — which is how Docker does it.
+double underscores — `UpDownLoaderBot__Telegram__Token`, or
+`UpDownLoaderBot__TikTok__Downloaders__TnkTok=false` for one of the flags below. That is
+how Docker supplies the token, and the token is the only one it supplies: every other
+setting lives in `appsettings.json` alone, so the deploy and `docker-compose.yml` never
+mention them.
 
-| Setting                            | Purpose                            |
-|------------------------------------|------------------------------------|
-| `Telegram:Token`                   | bot token                          |
-| `InstagramDownloaders:KkInstagram` | whether the kkinstagram downloader is enabled |
-| `InstagramDownloaders:YtDlp`       | whether the yt-dlp downloader is enabled |
-| `YtDlp:InstagramCookiesFile`       | path to the Instagram cookies for yt-dlp |
+Each platform owns a section, and at least one of its downloaders has to stay enabled —
+the bot refuses to start otherwise.
+
+| Setting                                | Purpose                                       |
+|----------------------------------------|-----------------------------------------------|
+| `Telegram:Token`                       | bot token                                     |
+| `Instagram:Downloaders:KkInstagram`    | whether the kkinstagram downloader is enabled |
+| `Instagram:Downloaders:YtDlp`          | whether the yt-dlp downloader is enabled      |
+| `Instagram:YtDlp:CookiesFile`          | path to the Instagram cookies for yt-dlp      |
+| `TikTok:Downloaders:TnkTok`            | whether the tnktok downloader is enabled      |
+| `TikTok:Downloaders:YtDlp`             | whether the yt-dlp downloader is enabled      |
+
+TikTok has no cookies setting because it needs no account: both of its downloaders work
+anonymously. Instagram serves video to signed-in users only — see
+[Instagram cookies](#instagram-cookies).
 
 Keep the token in an environment variable or a secret, never in the code. If it ever
 lands in git history, revoke it in @BotFather and issue a new one.

@@ -23,6 +23,8 @@ public class YtDlpFailedExceptionTests
     [InlineData("ERROR: [Instagram] ABC: The page does not exist")]
     [InlineData("ERROR: [Instagram] ABC: This account is private")]
     [InlineData("ERROR: [Instagram] ABC: requested format is not available")]
+    // A TikTok photo post: its URL shape has no extractor, so it falls through to the generic one.
+    [InlineData("ERROR: Unsupported URL: https://www.tiktok.com/@someone/photo/123")]
     public void Knows_a_failure_about_the_post_is_the_same_on_every_attempt(string standardError)
     {
         Assert.True(IsFinal(standardError));
@@ -33,6 +35,10 @@ public class YtDlpFailedExceptionTests
     [InlineData("ERROR: [Instagram] ABC: HTTP Error 503: Service Unavailable")]
     [InlineData("ERROR: unable to download video data: Connection reset by peer")]
     [InlineData("ERROR: [Instagram] ABC: Temporary failure in name resolution")]
+    // What TikTok's extractor prints whenever the API hands back no post — for a deleted one as much
+    // as for a genuine block. The wording cannot tell those apart, so it keeps its second go: reading
+    // it as final would swallow a rate-limit that a retry would have got through.
+    [InlineData("ERROR: [TikTok] 123: Your IP address is blocked from accessing this post")]
     public void Gives_a_failure_on_the_way_to_the_post_another_go(string standardError)
     {
         Assert.False(IsFinal(standardError));

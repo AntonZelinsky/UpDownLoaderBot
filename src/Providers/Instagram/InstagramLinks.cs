@@ -4,8 +4,8 @@ using UpDownLoaderBot.Core;
 namespace UpDownLoaderBot.Providers.Instagram;
 
 /// <summary>
-///     Everything the bot knows about the shape of an Instagram link, in one place. A second platform
-///     gets a class like this one and nothing else.
+///     Everything the bot knows about the shape of an Instagram link, in one place: the intake asks
+///     nothing else about a link, and the downloaders get their routing from here.
 /// </summary>
 public sealed partial class InstagramLinks : IPlatformLinks
 {
@@ -16,9 +16,9 @@ public sealed partial class InstagramLinks : IPlatformLinks
 
     public MediaLink? Find(string text)
     {
-        return SupportedRegex().Match(text) is { Success: true } match
-            ? new MediaLink(match.Value, Platform, match.Groups["id"].Value)
-            : null;
+        var match = SupportedRegex().Match(text);
+
+        return match.Success ? new MediaLink(match.Value, Platform, match.Groups["id"].Value) : null;
     }
 
     /// <summary>
@@ -27,7 +27,9 @@ public sealed partial class InstagramLinks : IPlatformLinks
     /// </summary>
     public bool IsSingleVideo(MediaLink link)
     {
-        return SupportedRegex().Match(link.Url) is { Success: true } match
+        var match = SupportedRegex().Match(link.Url);
+
+        return match.Success
                && SingleVideoKinds.Contains(match.Groups["kind"].Value, StringComparer.OrdinalIgnoreCase);
     }
 

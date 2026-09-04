@@ -21,24 +21,32 @@ public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase
     {
         _links = links;
 
-        var deployedFile = ResolveCookiesFile(options.Value.InstagramCookiesFile);
+        var configured = options.Value.CookiesFile;
+        var deployedFile = ResolveCookiesFile(configured);
         _cookiesFile = deployedFile is null ? null : PrepareCookiesFile(deployedFile);
 
-        if (!string.IsNullOrWhiteSpace(options.Value.InstagramCookiesFile))
+        if (string.IsNullOrWhiteSpace(configured))
         {
-            if (deployedFile is not null)
-            {
-                logger.LogInformation(
-                    "Instagram cookies: deployed {DeployedFile}, yt-dlp uses {CookiesFile}",
-                    deployedFile,
-                    _cookiesFile);
-            }
-            else
-            {
-                logger.LogWarning(
-                    "Configured Instagram cookies file '{Configured}' was not found; Instagram downloads may fail.",
-                    options.Value.InstagramCookiesFile);
-            }
+            // Instagram serves video only to signed-in users, so this is not an optional setting.
+            // Said out loud because the alternative is silence: a key renamed or misspelled reads
+            // exactly like a key that was never there, and the first sign would be a 👎 on every
+            // Instagram link in production.
+            logger.LogWarning(
+                "No Instagram cookies configured (UpDownLoaderBot:Instagram:YtDlp:CookiesFile); "
+                + "yt-dlp will run without authentication and Instagram downloads will fail.");
+        }
+        else if (deployedFile is null)
+        {
+            logger.LogWarning(
+                "Configured Instagram cookies file '{Configured}' was not found; Instagram downloads may fail.",
+                configured);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Instagram cookies: deployed {DeployedFile}, yt-dlp uses {CookiesFile}",
+                deployedFile,
+                _cookiesFile);
         }
     }
 

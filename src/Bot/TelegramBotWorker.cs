@@ -98,7 +98,7 @@ public sealed class TelegramBotWorker : BackgroundService
             await _bot.SendMessage(
                 chatId: message.Chat.Id,
                 text: BotTexts.StartInstructions.For(message.From?.LanguageCode),
-                // The bare instagram.com paths in the text are enough for Telegram to try a preview.
+                // The bare instagram.com and tiktok.com paths in the text are enough for Telegram to try a preview.
                 linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
                 cancellationToken: ct);
 

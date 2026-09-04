@@ -57,7 +57,7 @@ public class YtDlpDownloaderTests
 
         var options = new InstagramYtDlpOptions
         {
-            InstagramCookiesFile = cookiesFile
+            CookiesFile = cookiesFile
         };
 
         var downloader = new InstagramYtDlpDownloader(Options.Create(options), Links, NullLogger<InstagramYtDlpDownloader>.Instance);
@@ -173,7 +173,7 @@ public class YtDlpDownloaderTests
 
     private static InstagramYtDlpDownloader CreateDownloader(string cookiesFile)
     {
-        var options = Options.Create(new InstagramYtDlpOptions { InstagramCookiesFile = cookiesFile });
+        var options = Options.Create(new InstagramYtDlpOptions { CookiesFile = cookiesFile });
         return new InstagramYtDlpDownloader(options, Links, NullLogger<InstagramYtDlpDownloader>.Instance);
     }
 

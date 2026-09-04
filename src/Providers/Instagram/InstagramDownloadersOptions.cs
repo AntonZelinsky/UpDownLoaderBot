@@ -13,5 +13,5 @@ public sealed class InstagramDownloadersOptions
     public bool YtDlp { get; set; } = true;
 
     /// <summary>Enables the HTTP kkinstagram downloader (<see cref="KkInstagramDownloader" />).</summary>
-    public bool KkInstagram { get; set; }
+    public bool KkInstagram { get; set; } = true;
 }

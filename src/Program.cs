@@ -2,6 +2,7 @@ using Telegram.Bot;
 using UpDownLoaderBot.Bot;
 using UpDownLoaderBot.Core;
 using UpDownLoaderBot.Providers.Instagram;
+using UpDownLoaderBot.Providers.TikTok;
 using UpDownLoaderBot.Tools;
 using UpDownLoaderBot.Tools.Ffprobe;
 
@@ -23,40 +24,14 @@ if (string.IsNullOrWhiteSpace(token))
 
 builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(token));
 builder.Services.AddSingleton<TelegramVideoPreparer>();
-builder.Services.Configure<InstagramYtDlpOptions>(appConfig.GetSection("YtDlp"));
+// Platform registration order decides the intake: a message carrying links of both platforms is
+// answered with the first platform here that recognizes one, not with the link that comes first in
+// the text. Arbitrating by position needs each match's offset (backlog.md §8).
+builder.Services.AddInstagram(appConfig.GetSection("Instagram"), startupLogger);
+builder.Services.AddTikTok(appConfig.GetSection("TikTok"), startupLogger);
 
-// One instance, two roles: a platform to the intake, the Instagram link shapes to the downloaders.
-// Registering the interface separately instead of resolving the class would hand out a second one.
-builder.Services.AddSingleton<InstagramLinks>();
-builder.Services.AddSingleton<IPlatformLinks>(services => services.GetRequiredService<InstagramLinks>());
 builder.Services.AddSingleton<MediaLinkParser>();
 builder.Services.AddSingleton<MediaFetcher>();
-
-var features = appConfig.GetSection("InstagramDownloaders").Get<InstagramDownloadersOptions>()
-               ?? new InstagramDownloadersOptions();
-
-if (!features.KkInstagram && !features.YtDlp)
-{
-    throw new InvalidOperationException(
-        "No Instagram download strategy is enabled. Enable at least one of " +
-        "UpDownLoaderBot:InstagramDownloaders:YtDlp or UpDownLoaderBot:InstagramDownloaders:KkInstagram.");
-}
-
-startupLogger.LogInformation(
-    "Instagram downloaders: KkInstagram={KkInstagram}, YtDlp={YtDlp}.", features.KkInstagram, features.YtDlp);
-
-// Registration order is the order MediaFetcher tries them, among those that take the link:
-// kkinstagram (plain HTTP, one-video links only) first, yt-dlp as the fallback for everything else.
-if (features.KkInstagram)
-{
-    builder.Services.AddHttpClient(nameof(KkInstagramDownloader));
-    builder.Services.AddSingleton<IMediaDownloader, KkInstagramDownloader>();
-}
-
-if (features.YtDlp)
-{
-    builder.Services.AddSingleton<IMediaDownloader, InstagramYtDlpDownloader>();
-}
 
 DownloadFolder.DeleteLeftovers(startupLogger);
 
