@@ -3,10 +3,11 @@
 [@UpDownLoaderBot](https://t.me/UpDownLoaderBot) — a Telegram bot that downloads
 Instagram Reels and TikTok videos and sends them straight back to the chat. Just give it a link,
 in a direct message, a group or a channel. When a download fails, the bot reacts to
-the link with 👎.
+the link with 😴. A link with nothing to download — a post of photos only, a TikTok
+slideshow — gets no reaction at all: there was no video to send, so nothing went wrong.
 
 `/start` — the button Telegram shows on the first visit — answers with a short
-instruction: what to send, where the bot works, and what the 👎 means. It follows the
+instruction: what to send, where the bot works, and what the 😴 means. It follows the
 language of the Telegram client that asked: Russian, Ukrainian, Polish and Belarusian
 are translated, everyone else gets English.
 
@@ -29,6 +30,9 @@ the container, and Kestrel's usual port locally.
 
 ## How it works
 
+[ARCHITECTURE.md](ARCHITECTURE.md) is the map: a diagram of the components and who calls whom, what
+each class does, one request step by step, and which method to open for which question.
+
 The bot picks the first link it recognizes out of the message — an Instagram `reel`,
 `reels`, `p` or `tv` link, or any TikTok link — `/@user/video/`, `/@user/photo/`,
 `/share/video/`, a short `vm.`/`vt.tiktok.com` or `/t/` one, a TikTok Lite or
@@ -41,6 +45,12 @@ after the post.
 A downloader decides for itself whether a link is its business, and claims only links
 whose content it can deliver whole — otherwise it would answer with a part of a post and
 the one that could have returned all of it would never run.
+
+A link does not say whether the post holds a video: an Instagram `p` link may be a photo,
+a carousel or a video. Only a download finds out. When yt-dlp reaches the post and every
+item reports `No video formats found!`, there is *nothing to send*; the same holds for a
+link no downloader takes. Both end in silence. Anything else that leaves the bot without
+a video is a failure, and gets the 😴.
 
 Each platform has the same pair: a mirror that answers a rewritten link with the video
 file itself, and yt-dlp behind it.
@@ -68,7 +78,9 @@ file itself, and yt-dlp behind it.
    with the H.264 file. Only the host is swapped, short links included — the mirror
    follows `vm.tiktok.com/…` itself — so this is the fast path for every shape but a
    `/photo/` slideshow, which holds no video at all;
-2. **yt-dlp** — the fallback, which takes every TikTok link. TikTok offers its 720p
+2. **yt-dlp** — the fallback, which takes every TikTok link but a `/photo/` slideshow:
+   it has no extractor for one, and with neither downloader taking it the link gets no
+   reaction rather than a run that can only fail. TikTok offers its 720p
    rendition in H.265 only, which the Bot API's clients cannot be relied on to play and
    the bot refuses, so the format sort asks for H.264 before it asks for height.
 
@@ -181,14 +193,14 @@ mention them.
 Each platform owns a section, and at least one of its downloaders has to stay enabled —
 the bot refuses to start otherwise.
 
-| Setting                                | Purpose                                       |
-|----------------------------------------|-----------------------------------------------|
-| `Telegram:Token`                       | bot token                                     |
-| `Instagram:Downloaders:KkInstagram`    | whether the kkinstagram downloader is enabled |
-| `Instagram:Downloaders:YtDlp`          | whether the yt-dlp downloader is enabled      |
-| `Instagram:YtDlp:CookiesFile`          | path to the Instagram cookies for yt-dlp      |
-| `TikTok:Downloaders:TnkTok`            | whether the tnktok downloader is enabled      |
-| `TikTok:Downloaders:YtDlp`             | whether the yt-dlp downloader is enabled      |
+| Setting                             | Purpose                                       |
+|-------------------------------------|-----------------------------------------------|
+| `Telegram:Token`                    | bot token                                     |
+| `Instagram:Downloaders:KkInstagram` | whether the kkinstagram downloader is enabled |
+| `Instagram:Downloaders:YtDlp`       | whether the yt-dlp downloader is enabled      |
+| `Instagram:YtDlp:CookiesFile`       | path to the Instagram cookies for yt-dlp      |
+| `TikTok:Downloaders:TnkTok`         | whether the tnktok downloader is enabled      |
+| `TikTok:Downloaders:YtDlp`          | whether the yt-dlp downloader is enabled      |
 
 TikTok has no cookies setting because it needs no account: both of its downloaders work
 anonymously. Instagram serves video to signed-in users only — see
@@ -229,12 +241,12 @@ receives the bot token and `APP_IMAGE` (the latest image tag), so a plain
 
 Repository secrets (Settings → Secrets and variables → Actions):
 
-| Secret              | Purpose                                              |
-|---------------------|------------------------------------------------------|
-| `SSH_HOST`          | server IP or hostname                                |
-| `SSH_USER`          | SSH user                                             |
-| `SSH_KEY`           | private SSH key (the public one goes in `authorized_keys`) |
-| `SSH_PORT`          | SSH port                                             |
-| `DEPLOY_PATH`       | path on the server, e.g. `/home/user/updownloaderbot` |
-| `TELEGRAM_TOKEN`    | bot token, written into `.env` on the server         |
+| Secret              | Purpose                                                                         |
+|---------------------|---------------------------------------------------------------------------------|
+| `SSH_HOST`          | server IP or hostname                                                           |
+| `SSH_USER`          | SSH user                                                                        |
+| `SSH_KEY`           | private SSH key (the public one goes in `authorized_keys`)                      |
+| `SSH_PORT`          | SSH port                                                                        |
+| `DEPLOY_PATH`       | path on the server, e.g. `/home/user/updownloaderbot`                           |
+| `TELEGRAM_TOKEN`    | bot token, written into `.env` on the server                                    |
 | `INSTAGRAM_COOKIES` | contents of `InstagramCookies.txt`, see [Instagram cookies](#instagram-cookies) |

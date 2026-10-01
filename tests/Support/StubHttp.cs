@@ -4,9 +4,8 @@ using System.Net.Http.Headers;
 namespace UpDownLoaderBot.Tests.Support;
 
 /// <summary>
-///     The HTTP stand-ins shared by the mirror downloader tests, which are the same test written
-///     against two hosts. Kept here rather than nested in one of them so neither owns the other's
-///     fixture.
+///     The HTTP stand-ins shared by the two mirror downloader tests, which are the same test written
+///     against two hosts.
 /// </summary>
 public static class StubHttp
 {
@@ -67,7 +66,6 @@ public static class StubHttp
         }
     }
 
-    // Never-ending source of bytes, standing in for a response that keeps on coming.
     private sealed class EndlessStream : Stream
     {
         public override bool CanRead => true;

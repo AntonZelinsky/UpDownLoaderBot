@@ -11,11 +11,9 @@ public class TikTokYtDlpDownloaderTests
     private static readonly TikTokYtDlpDownloader Downloader =
         new(Links, NullLogger<TikTokYtDlpDownloader>.Instance);
 
-    // The fallback takes every TikTok link, short ones included: those carry no post id for the
-    // mirror to rewrite, so yt-dlp is the only one that can follow them.
+    // The mirror passes on the legacy paths, so yt-dlp is the only one that serves them.
     [Theory]
     [InlineData("https://www.tiktok.com/@scout2015/video/123")]
-    [InlineData("https://www.tiktok.com/@scout2015/photo/123")]
     [InlineData("https://www.tiktok.com/share/video/123")]
     [InlineData("https://www.tiktokv.com/share/video/123")]
     [InlineData("https://lite.tiktok.com/t/ZSqetDcY9")]
@@ -24,9 +22,18 @@ public class TikTokYtDlpDownloaderTests
     [InlineData("https://vm.tiktok.com/ZNdA1qXBb/")]
     [InlineData("https://vt.tiktok.com/ZSabc123/")]
     [InlineData("https://www.tiktok.com/t/ZTd2y5Rar/")]
-    public void Takes_every_tiktok_link(string url)
+    public void Takes_every_tiktok_link_that_may_hold_a_video(string url)
     {
         Assert.True(Downloader.CanHandle(new MediaLink(url, Links.Platform, "123")));
+    }
+
+    // yt-dlp has no extractor for a slideshow, so a run could only end in "Unsupported URL".
+    [Theory]
+    [InlineData("https://www.tiktok.com/@scout2015/photo/123")]
+    [InlineData("https://www.tiktok.com/share/photo/123")]
+    public void Declines_a_photo_post(string url)
+    {
+        Assert.False(Downloader.CanHandle(new MediaLink(url, Links.Platform, "123")));
     }
 
     [Fact]

@@ -21,11 +21,15 @@ public sealed class TikTokYtDlpDownloader : YtDlpDownloaderBase
     // the worst of them. The 45 MB filter in the format selector is what keeps the ceiling.
     protected override string FormatSort => "vcodec:h264,res:1080,tbr";
 
-    // The last downloader of its platform takes every link of it, shapes it will fail on included:
-    // something has to answer, or a link the bot plainly recognized would get no reaction at all. A
-    // 👎 is the answer then, which is why this one does not consult the shape.
+    // The last downloader takes every link that may hold a video, shapes it may fail on included, so
+    // a failure gets its reaction. A photo post holds none by definition and is left to silence.
     public override bool CanHandle(MediaLink link)
     {
-        return link.Platform == _links.Platform;
+        if (link.Platform != _links.Platform)
+        {
+            return false;
+        }
+
+        return _links.ShapeOf(link) is not TikTokLinkShape.Photo;
     }
 }

@@ -24,13 +24,14 @@ public sealed class MediaFetcher
     }
 
     /// <summary>
-    ///     Throws when nothing sendable came out of any downloader — that throw is the caller's 👎.
-    ///     Preparation runs inside the loop: a file the preparer refuses moves on to the next
-    ///     downloader instead of being sent or failing the request.
+    ///     Throws when nothing sendable came out of any downloader, and
+    ///     <see cref="NothingToSendException" /> when there was nothing to send in the first place.
+    ///     Preparation runs inside the loop, so a refused file moves on to the next downloader.
     /// </summary>
     public async Task<PreparedPost> Fetch(MediaLink link, string folder, CancellationToken cancellationToken)
     {
         Exception? lastError = null;
+        NothingToSendException? nothingToSend = null;
         var tried = 0;
 
         foreach (var downloader in _downloaders)
@@ -57,7 +58,6 @@ public sealed class MediaFetcher
                     return new PreparedPost(media);
                 }
 
-                // If this was the last downloader, the refusal is the whole reason for the 👎.
                 lastError = refusal ?? lastError;
 
                 // Not an error but a hand-over: the next downloader may serve the same link better.
@@ -69,6 +69,13 @@ public sealed class MediaFetcher
             {
                 throw;
             }
+            catch (NothingToSendException ex)
+            {
+                // A hand-over still: the next downloader may yet find the video.
+                nothingToSend = ex;
+                _logger.LogInformation(
+                    "Downloader '{Name}' found nothing to send for {Url}: {Reason}", name, link.Url, ex.Message);
+            }
             catch (Exception ex)
             {
                 lastError = ex;
@@ -78,12 +85,19 @@ public sealed class MediaFetcher
             }
         }
 
-        // When nobody took the link there is no failure in the log to explain the 👎, so say so here.
-        throw new InvalidOperationException(
-            tried == 0
-                ? $"No enabled downloader takes {link.Url} ({link.Platform})."
-                : $"All {tried} downloader(s) that take {link.Url} failed.",
-            lastError);
+        // A downloader that reached the post and found no video has said something about the post
+        // itself, which outweighs another one failing on the way to it.
+        if (nothingToSend is not null)
+        {
+            throw new NothingToSendException($"There is no video in {link.Url}.", nothingToSend);
+        }
+
+        if (tried == 0)
+        {
+            throw new NothingToSendException($"No enabled downloader takes {link.Url} ({link.Platform}).");
+        }
+
+        throw new InvalidOperationException($"All {tried} downloader(s) that take {link.Url} failed.", lastError);
     }
 
     /// <summary>

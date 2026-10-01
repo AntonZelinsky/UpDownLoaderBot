@@ -69,7 +69,7 @@ public abstract class MirrorDownloaderBase : IMediaDownloader
         return new DownloadedPost([filePath]);
     }
 
-    /// <summary>The mirror's own address for this link; a plain host rewrite in both cases so far.</summary>
+    /// <summary>The mirror's own address for this link.</summary>
     protected abstract Uri MirrorUrlFor(MediaLink link);
 
     // Content-Length is absent on a chunked response and can lie, so the bytes written are what count.

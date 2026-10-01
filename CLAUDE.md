@@ -29,6 +29,13 @@ failure of the brew yt-dlp.
 
 ## Architecture
 
+`ARCHITECTURE.md` is the map for a human reader: a Mermaid component diagram, a table of what each
+class does, a sequence diagram of one request, which downloader takes which link, and a "where to
+look" table. **Keep it in step** when a class is added, renamed or moved, or the request flow
+changes — it names classes and methods, not line numbers, so only a real change makes it stale. Its
+tables are aligned in the source, columns padded with spaces and dashes, so the raw file reads as
+well as the rendered one.
+
 Three layers, and the dependencies only ever point one way. `ArchitectureTests` reads the sources
 and fails the build if any of this stops being true — it is one assembly, so the compiler has no say:
 
@@ -84,7 +91,10 @@ Request flow:
 4. `TelegramVideoPreparer.Prepare` runs `ffprobe` on each file, rejecting anything unsendable.
 5. `SendVideo`, as a reply to the link. One request still means one video (`post.Media[0]`); the
    album branch arrives with multi-media.
-6. A failure reacts 👎 on the original message.
+6. A failure reacts 😴 on the original message (`FailureReaction`; 😵 is not among the reactions the
+   Bot API allows a bot). **Nothing to send is not a failure**: a `NothingToSendException` — no
+   downloader takes the link, or yt-dlp reached the post and found only photos — ends the request in
+   silence. A reaction there would read as the bot judging the post.
 
 Key invariants that are easy to break:
 
@@ -93,10 +103,19 @@ Key invariants that are easy to break:
   would have returned all of it never runs. This is the routing: nothing above dispatches by platform.
   It follows that a downloader must not claim a shape it knows it cannot serve either — the mirror
   declines a TikTok `/embed/` link rather than spending a request to be told 404.
-- **The last downloader of a platform is the exception: it claims every link of that platform**,
-  shapes it will fail on included. Something has to answer, or a link the intake plainly recognized
-  gets no reaction at all; a 👎 is that answer. So `TikTokYtDlpDownloader.CanHandle` tests the
-  platform and nothing else, while the mirror in front of it consults the link's shape.
+- **The last downloader of a platform is the exception: it claims every link of that platform that
+  may hold a video**, shapes it may fail on included, because a failure is owed a 😴 and nothing
+  after it gets the chance. What it declines is only a shape that holds no video by definition — the
+  TikTok `/photo/` post — and a link nobody takes is *nothing to send*: silence, not a reaction. So
+  `TikTokYtDlpDownloader.CanHandle` tests the platform and rules out the photo shape, while the
+  mirror in front of it consults the link's shape for more.
+- **Whether a post holds a video is learnt from the service, not from the link.** An Instagram `/p/`
+  is a photo, a carousel or a video alike, so the intake keeps matching it and yt-dlp is asked.
+  `YtDlpFailedException.HoldsNoVideo` — **every** `ERROR:` line is `No video formats found` — is what
+  turns that answer into a `NothingToSendException`; a carousel where one item failed on the way
+  still had something to download and stays a failure. In `MediaFetcher` it is a hand-over like any
+  other (the next downloader still runs), but at the end it outweighs another downloader's failure:
+  it is a fact about the post, not about getting to it.
 - **Preparation happens inside the downloader loop, not after it.** A file that ffprobe rejects must
   fall through to the next downloader instead of being sent or failing the whole request — the
   criterion is *nothing survived preparation*, which with one file is the same as *the preparer threw*.
@@ -157,8 +176,9 @@ what to call it in a log line.
   path (`/en/@user/…`) is not a shape: TikTok answers it with a 404. The
   `id` group repeats across the alternatives, which .NET allows — the branch that matched wins. **A
   short link carries no post id**, so its own code stands in; the id is only ever a file name inside
-  the request's own folder, so that is enough. `/photo/` is matched on purpose: a slideshow cannot be
-  sent, and an honest 👎 beats silence on a link that is plainly the bot's business.
+  the request's own folder, so that is enough. `/photo/` is matched on purpose, so that the link is
+  recognized and then declined by every downloader — the log says what it was, and the chat gets
+  silence rather than a reaction for a post that never held a video.
 - `TikTokMirrorDownloader` : `MirrorDownloaderBase` — `d.tnktok.com`, the fxTikTok mirror. **The `d.`
   prefix is what serves the file**; the bare host and `vxtiktok.com` answer with an HTML embed page.
   Like kkinstagram it varies by client, so the bot UA is what gets the file rather than a redirect
@@ -172,15 +192,16 @@ what to call it in a log line.
   `MayTheMirrorHaveThis` predicate: the policy stays with the downloader that owns it, and a
   downloader added later picks its own subset without `TikTokLinks` growing a predicate for it. The
   boolean it replaced could only answer one consumer's question, and the mirror needed two.
-- `TikTokYtDlpDownloader` : `YtDlpDownloaderBase` — the fallback, and it takes every TikTok link, a
-  photo post included, so an unservable link ends in a 👎 rather than in silence. **No cookies**: the
-  extractor solves TikTok's challenge in pure Python (`hashlib`), so no JS runtime and no `--cookies`
-  are needed, and nothing is mounted for it.
+- `TikTokYtDlpDownloader` : `YtDlpDownloaderBase` — the fallback, and it takes every TikTok link but
+  a photo post, so a link that may hold a video and cannot be served ends in a 😴 rather than in
+  silence. **No cookies**: the extractor solves TikTok's challenge in pure Python (`hashlib`), so no
+  JS runtime and no `--cookies` are needed, and nothing is mounted for it.
 
 TikTok specifics worth knowing: the extractor prints `Your IP address is blocked from accessing this
 post` whenever the API hands back nothing — for a deleted video as much as for a real block — so
 `IsFinal` deliberately does *not* read it as final; a photo post's URL has no extractor at all and
-comes back as `Unsupported URL`, which is final, so it costs one run and a 👎.
+comes back as `Unsupported URL`, which is why nothing takes that shape any more — the run could only
+fail.
 
 yt-dlp specifics that look wrong but aren't: `-I 1:10` instead of `--no-playlist` (the Instagram
 extractor ignores that flag for carousels, so the range bounds how far in the search goes);
@@ -197,13 +218,13 @@ from an interrupted run out of the reply.
 **`-S` puts the codec before the resolution** (`FormatSort`, `protected virtual`), because the
 preparer refuses anything but H.264 outright: a taller rendition in another codec is not a better one
 but an unsendable one. TikTok proves it — its 720p is h265-only, so `res` first picked a file every
-request would have 👎'd. `TikTokYtDlpDownloader` overrides the tail with `tbr`, as TikTok offers one
+request would have failed. `TikTokYtDlpDownloader` overrides the tail with `tbr`, as TikTok offers one
 resolution at several bitrates and `+size` would settle on the worst.
 
 The retry (`Attempts = 2`, 5s apart) is for a download that failed on the way to the post, not on the
 post: `YtDlpFailedException.IsFinal` reads stderr and breaks the loop when every `ERROR:` line is
 about the post itself (no video in it, unavailable, private, login required), because a second run
-prints the same line and only holds back a 👎 the user is already owed. Anything unrecognized still
+prints the same line and only holds back a 😴 the user is already owed. Anything unrecognized still
 gets its second go — it reads yt-dlp's prose, so the default has to be the old behaviour — and one
 unrecognized line among several is enough, since `--ignore-errors` prints one per carousel item.
 That exception also carries the reason in its message: it is what ends up under `Failed to process`,
@@ -252,7 +273,7 @@ deployed cookies** — the deploy does exactly that when the `INSTAGRAM_COOKIES`
 **A missing cookies setting is said out loud at startup**, not only a missing file: Instagram serves
 video to signed-in users alone, so an absent or misspelled
 `UpDownLoaderBot:Instagram:YtDlp:CookiesFile` otherwise reads exactly like a key that was never
-there, and the first sign would be a 👎 on every Instagram link in production.
+there, and the first sign would be a 😴 on every Instagram link in production.
 
 `PrepareCookiesFile` / `ResolveCookiesFile` in `YtDlpDownloaderBase` implement this; the latter also
 searches upward from the app base directory so a local `dotnet run` finds the repo-root `cookies/`.
@@ -341,7 +362,15 @@ fails the build instead of throwing on the first message that arrives.
 
 Comments here explain *why*, usually the non-obvious external constraint (a Bot API limit, a yt-dlp
 quirk, an ffprobe oddity) — match that register rather than describing what the code does. Code,
-comments and docs are in English.
+comments and docs are in English. **A comment has to earn its place**, so keep it short and only
+where a reader would otherwise ask "why":
+
+- a `///` doc comment on a type or member whose name does not already say it all — not on every
+  property, and not one that restates the name (`Enables the yt-dlp downloader` on `YtDlp`);
+- an inline comment on a line that looks wrong but isn't, or that a reader would "fix";
+- one fact in one place: what a class doc says is not repeated on its members, and the long story
+  belongs in this file or `readme.md`, with the comment keeping the one sentence the code needs;
+- no history (`which 👎 did`), no plans (`a future YouTube downloader`), no narrating the next line.
 
 User-facing bot text lives in `src/Bot/BotTexts.cs`: one `LocalizedText` (`src/Bot/LocalizedText.cs`)
 per message, holding all five languages in alphabetical order. `LocalizedText.For` is the only way in —
@@ -350,7 +379,7 @@ and for a channel post, which has no sender to ask), and the languages are priva
 take one and skip that fallback. A new message is another `LocalizedText`, not another switch; a new
 language is a constructor parameter, a property and a switch arm, and the compiler then names every
 message missing it. Keep the translations saying the same things — `BotTextsTests` checks the link
-shapes and the 👎 are in all of them.
+shapes and the 😴 are in all of them.
 
 `backlog.md` is untracked working notes (in Russian): known rough edges, decisions deliberately
 left until a second example exists, and a log of what has been done. Some entries are stale

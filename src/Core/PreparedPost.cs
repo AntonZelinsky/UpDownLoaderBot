@@ -13,9 +13,6 @@ public sealed record PreparedPost
         Media = media;
     }
 
-    /// <summary>
-    ///     Never empty, so the caller may reach for the first item without checking — enforced above
-    ///     rather than promised here, because that reach is what would crash.
-    /// </summary>
+    /// <summary>Never empty, so the caller may take the first item without checking.</summary>
     public IReadOnlyList<PreparedVideo> Media { get; }
 }

@@ -14,7 +14,7 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
     /// <summary>Marks the copy yt-dlp writes to, as in <c>InstagramCookies.session.txt</c>.</summary>
     private const string SessionSuffix = ".session";
 
-    /// <summary>Five minutes: one invocation covers the download itself and an ffmpeg merge.</summary>
+    /// <summary>One invocation covers the download and the ffmpeg merge.</summary>
     private const int TimeoutSeconds = 300;
 
     /// <summary>
@@ -45,17 +45,11 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
         _logger = logger;
     }
 
-    /// <summary>
-    ///     Left to the subclass on purpose: a downloader added for another service has to say which
-    ///     links are its own, and the compiler asks.
-    /// </summary>
     public abstract bool CanHandle(MediaLink link);
 
     /// <summary>
-    ///     How yt-dlp ranks what the selector left. The codec comes before the resolution because the
-    ///     preparer refuses anything but H.264 outright, so a higher rendition in another codec is not
-    ///     a better one — it is an unsendable one. Then the tallest up to 1080p, then the smaller of
-    ///     equal matches. A service offering one resolution at several bitrates wants a sort of its own.
+    ///     Codec before resolution: the preparer refuses anything but H.264, so a taller rendition in
+    ///     another codec is not a better one but an unsendable one.
     /// </summary>
     protected virtual string FormatSort => "vcodec:h264,res:1080,+size";
 
@@ -89,9 +83,12 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
             {
                 throw;
             }
+            catch (YtDlpFailedException ex) when (ex.HoldsNoVideo)
+            {
+                throw new NothingToSendException($"{url} holds no video.", ex);
+            }
             catch (YtDlpFailedException ex) when (ex.IsFinal)
             {
-                // A second run would print the same line, and only delay a 👎 already owed.
                 _logger.LogWarning("yt-dlp will not serve {Url}, not retrying: {Reason}", url, ex.Message);
                 lastError = ex;
                 break;
@@ -125,10 +122,8 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
             "--max-downloads", "1",
             "-f", FormatSelector,
             "-S", FormatSort,
-            // The file is named after the post, so a mirror that ran first and left one — a partial
-            // write, or a whole file the preparer then refused — sits under exactly the name yt-dlp is
-            // about to use, and it would reuse it and print its path as a success. That hands the
-            // refused file straight back and defeats the fallback the loop exists for.
+            // A mirror that ran first may have left a refused file under this very name; without the
+            // flag yt-dlp would reuse it and report it as its own success.
             "--force-overwrites",
             "--merge-output-format", "mp4"
         };
@@ -149,10 +144,10 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
     {
         _logger.LogInformation("Running yt-dlp for {Url}", url);
 
-        // A non-zero exit is the normal case here: --max-downloads reaching its limit is one (101),
-        // and with --ignore-errors so is a skipped photo. What it printed decides success instead.
         var arguments = BuildArguments(url, outputTemplate);
 
+        // A non-zero exit is normal here: --max-downloads reaching its limit is one (101), and with
+        // --ignore-errors so is a skipped photo. What it printed decides success instead.
         var result = await ProcessRunner.Run(
             Executable, arguments, TimeoutSeconds, cancellationToken, throwOnNonZeroExit: false);
 
@@ -161,7 +156,6 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
             _logger.LogInformation("yt-dlp stderr: {Stderr}", result.StandardError);
         }
 
-        // One printed line per produced file, in playlist order (see --print).
         var filePath = result.StandardOutput
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(File.Exists);
@@ -223,9 +217,8 @@ public abstract class YtDlpDownloaderBase : IMediaDownloader
         var name = Path.GetFileNameWithoutExtension(deployedFile);
         var extension = Path.GetExtension(deployedFile);
 
-        // Configured with a session file already — a test pointing IG_COOKIES at one, say. That file
-        // is the writable copy, so deriving another level would only leave a stray
-        // <name>.session.session behind.
+        // Already a session copy (a test pointing IG_COOKIES at one): another level would only leave
+        // a stray <name>.session.session behind.
         if (name.EndsWith(SessionSuffix, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation(

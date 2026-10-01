@@ -27,10 +27,8 @@ public sealed class InstagramYtDlpDownloader : YtDlpDownloaderBase
 
         if (string.IsNullOrWhiteSpace(configured))
         {
-            // Instagram serves video only to signed-in users, so this is not an optional setting.
-            // Said out loud because the alternative is silence: a key renamed or misspelled reads
-            // exactly like a key that was never there, and the first sign would be a 👎 on every
-            // Instagram link in production.
+            // Instagram serves video to signed-in users only, and a misspelled key reads exactly like
+            // a missing one — so this is said out loud rather than found out in production.
             logger.LogWarning(
                 "No Instagram cookies configured (UpDownLoaderBot:Instagram:YtDlp:CookiesFile); "
                 + "yt-dlp will run without authentication and Instagram downloads will fail.");

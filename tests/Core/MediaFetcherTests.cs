@@ -47,10 +47,7 @@ public class MediaFetcherTests : IDisposable
         Assert.Equal(1, second.Calls);
     }
 
-    /// <summary>
-    ///     The invariant the design turns on. The second downloader need not succeed — that it was
-    ///     asked at all is the point.
-    /// </summary>
+    /// <summary>The invariant the design turns on: the second downloader need only be asked.</summary>
     [Fact]
     public async Task Moves_on_when_a_downloaded_file_is_not_sendable()
     {
@@ -64,7 +61,6 @@ public class MediaFetcherTests : IDisposable
         Assert.Equal(1, second.Calls);
     }
 
-    // When it was the last downloader, the refusal is the only explanation the 👎 has.
     [Fact]
     public async Task Reports_a_refused_file_as_the_cause()
     {
@@ -88,9 +84,9 @@ public class MediaFetcherTests : IDisposable
     }
 
     [Fact]
-    public async Task Fails_when_no_downloader_is_registered()
+    public async Task Has_nothing_to_send_when_no_downloader_is_registered()
     {
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Fetch());
+        await Assert.ThrowsAsync<NothingToSendException>(() => Fetch());
     }
 
     // Skipped outright, not asked and forgiven: an attempt could stop the fallback at a partial post.
@@ -106,16 +102,51 @@ public class MediaFetcherTests : IDisposable
         Assert.Equal(1, taking.Calls);
     }
 
-    // Without this the user gets a 👎 and the log holds no failure to explain it.
+    // The message is all the log has to say why nothing was tried.
     [Fact]
-    public async Task Says_so_when_no_downloader_takes_the_link_at_all()
+    public async Task Has_nothing_to_send_when_no_downloader_takes_the_link_at_all()
     {
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+        var error = await Assert.ThrowsAsync<NothingToSendException>(
             () => Fetch(StubDownloader.Declining(), StubDownloader.Declining()));
 
         _output.WriteLine(error.Message);
         Assert.Contains("No enabled downloader takes", error.Message);
         Assert.Null(error.InnerException);
+    }
+
+    [Fact]
+    public async Task Has_nothing_to_send_when_a_downloader_finds_no_video()
+    {
+        var noVideo = new NothingToSendException("only photos here");
+
+        var error = await Assert.ThrowsAsync<NothingToSendException>(
+            () => Fetch(StubDownloader.Failing(noVideo)));
+
+        Assert.Same(noVideo, error.InnerException);
+    }
+
+    [Fact]
+    public async Task Still_asks_the_next_downloader_after_one_finds_no_video()
+    {
+        var first = StubDownloader.Failing(new NothingToSendException("only photos here"));
+        var second = StubDownloader.Failing();
+
+        await Assert.ThrowsAsync<NothingToSendException>(() => Fetch(first, second));
+
+        Assert.Equal(1, first.Calls);
+        Assert.Equal(1, second.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Nothing_to_send_outweighs_another_downloaders_failure(bool noVideoFirst)
+    {
+        var noVideo = StubDownloader.Failing(new NothingToSendException("only photos here"));
+        var failing = StubDownloader.Failing(new HttpRequestException("the mirror is down"));
+
+        await Assert.ThrowsAsync<NothingToSendException>(
+            () => noVideoFirst ? Fetch(noVideo, failing) : Fetch(failing, noVideo));
     }
 
     // Shutting down is not a failed request: the worker tells them apart by the exception type.

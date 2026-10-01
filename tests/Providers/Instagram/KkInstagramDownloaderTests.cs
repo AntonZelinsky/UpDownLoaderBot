@@ -71,8 +71,7 @@ public class KkInstagramDownloaderTests : IDisposable
         Assert.Contains("TelegramBot", captured.Headers.UserAgent.ToString());
     }
 
-    // One link produces one name, whichever downloader served it — so a leftover from an interrupted
-    // run cannot be mistaken for this request's file, and a carousel can later be numbered off it.
+    // One link produces one name, whichever downloader served it.
     [Fact]
     public async Task Names_the_file_after_the_post()
     {
@@ -129,7 +128,6 @@ public class KkInstagramDownloaderTests : IDisposable
             () => CreateDownloader(handler).Download(Reel, _folder, CancellationToken.None));
 
         Assert.Contains("over the 60 MB limit", error.Message);
-        // Refused before the body was read, so nothing was written at all.
         Assert.Empty(Directory.GetFiles(_folder));
     }
 

@@ -12,9 +12,8 @@ public sealed class DownloadFolder : IDisposable
     private const string Root = "downloads";
 
     /// <summary>
-    ///     Names the folder after the moment the request arrived — <c>2026-08-21_14-05-33.482</c> — so
-    ///     a folder left behind says when it happened without anything to look it up in. Sorts
-    ///     chronologically as plain text, and the clock is the machine's own.
+    ///     The moment the request arrived, so a folder left behind says when it happened. Sorts
+    ///     chronologically as plain text.
     /// </summary>
     private const string NameFormat = "yyyy-MM-dd_HH-mm-ss.fff";
 

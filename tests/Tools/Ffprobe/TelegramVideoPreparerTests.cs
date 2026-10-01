@@ -101,7 +101,6 @@ public class TelegramVideoPreparerTests : IDisposable
             return;
         }
 
-        // Padded with trailing zeroes to pass 50 MB cheaply — mp4 readers ignore the tail.
         var source = await CreateVideo("oversized.mp4", "100x100", ["-c:v", "libx264"]);
         await PadTo(source, 55L * 1024 * 1024);
 
@@ -148,7 +147,6 @@ public class TelegramVideoPreparerTests : IDisposable
         Assert.Equal(640, prepared.Height);
     }
 
-    // Extra arguments (codec, filters) are appended before the output file.
     private async Task<string> CreateVideo(
         string fileName,
         string size,

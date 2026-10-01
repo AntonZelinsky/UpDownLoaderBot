@@ -19,8 +19,6 @@ public class YtDlpDownloaderTests
 
     // Hits a live Instagram reel, so it stays skipped; run it by hand with yt-dlp on PATH and
     // cookies in IG_COOKIES or cookies/InstagramCookies.txt.
-    // The fallback for everything Instagram, carousels included — that is the whole point of it
-    // being the one that runs when the mirror passes on a /p/ link.
     [Theory]
     [InlineData("https://www.instagram.com/reel/ABC123/")]
     [InlineData("https://www.instagram.com/reels/ABC123/")]

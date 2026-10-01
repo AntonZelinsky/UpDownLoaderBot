@@ -2,8 +2,7 @@ namespace UpDownLoaderBot.Providers.TikTok;
 
 /// <summary>
 ///     Which shape of TikTok link this is. A fact about the link, not a permission: each downloader
-///     reads it and decides which shapes are its own, so a downloader added later picks its subset
-///     without <see cref="TikTokLinks" /> having to grow a predicate for it.
+///     decides which shapes are its own.
 /// </summary>
 public enum TikTokLinkShape
 {
@@ -23,8 +22,8 @@ public enum TikTokLinkShape
     Short,
 
     /// <summary>
-    ///     <c>/embed/&lt;id&gt;</c> and <c>/v/&lt;id&gt;.html</c> — forms TikTok only redirects from
-    ///     now. Still worth recognizing, because an old forwarded message carries them.
+    ///     <c>/embed/&lt;id&gt;</c> and <c>/v/&lt;id&gt;.html</c>, which TikTok only redirects from now
+    ///     but an old forwarded message still carries.
     /// </summary>
     Legacy
 }

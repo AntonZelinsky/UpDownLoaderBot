@@ -15,6 +15,9 @@ public sealed class TelegramBotWorker : BackgroundService
 {
     private const string StartCommand = "/start";
 
+    // Must be one of the fixed reactions the Bot API allows a bot, which rules out 😵.
+    private const string FailureReaction = "😴";
+
     private readonly ITelegramBotClient _bot;
     private readonly MediaFetcher _fetcher;
     private readonly MediaLinkParser _links;
@@ -122,7 +125,6 @@ public sealed class TelegramBotWorker : BackgroundService
 
         _logger.LogInformation("Found a {Platform} link: {Url}", link.Platform, url);
 
-        // Everything this request downloads lands in here and goes away with it.
         using var folder = new DownloadFolder(_logger);
 
         try
@@ -140,6 +142,11 @@ public sealed class TelegramBotWorker : BackgroundService
         {
             // The bot is shutting down, not failing to handle the link: no reaction to leave behind.
             throw;
+        }
+        catch (NothingToSendException ex)
+        {
+            // Nothing was owed, so nothing is said; the upload action has not started yet either.
+            _logger.LogInformation("Nothing to send for {Url}: {Reason}", url, ex.Message);
         }
         catch (Exception ex)
         {
@@ -170,7 +177,7 @@ public sealed class TelegramBotWorker : BackgroundService
             video.Width, video.Height, video.Duration, url, message.Chat.Id);
     }
 
-    // Decoration: losing it must not cost the video, nor the 👎 that follows.
+    // Decoration: losing it must not cost the video, nor the reaction that follows.
     private async Task TryShowChatAction(Message message, ChatAction action, CancellationToken ct)
     {
         try
@@ -184,7 +191,7 @@ public sealed class TelegramBotWorker : BackgroundService
         }
     }
 
-    // Both halves of it: stop promising a video, then 👎 the link. Together, so neither is forgotten.
+    // Typing replaces the upload action, so the chat stops promising a video.
     private async Task TryReportFailure(Message message, CancellationToken ct)
     {
         await TryShowChatAction(message, ChatAction.Typing, ct);
@@ -194,7 +201,7 @@ public sealed class TelegramBotWorker : BackgroundService
             await _bot.SetMessageReaction(
                 chatId: message.Chat.Id,
                 messageId: message.MessageId,
-                reaction: [new ReactionTypeEmoji { Emoji = "👎" }],
+                reaction: [new ReactionTypeEmoji { Emoji = FailureReaction }],
                 cancellationToken: ct);
         }
         catch (Exception ex)

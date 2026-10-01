@@ -22,7 +22,7 @@ public static class BotTexts
         я не пабачу. Дадатковыя правы выдаваць не трэба, дастаткова магчымасці надсылаць
         паведамленні.
 
-        Калі на спасылцы з'явілася рэакцыя 👎 — значыць спампаваць гэтае відэа і даслаць яго
+        Калі на спасылцы з'явілася рэакцыя 😴 — значыць спампаваць гэтае відэа і даслаць яго
         ў чат не атрымалася.
         """,
         english:
@@ -40,7 +40,7 @@ public static class BotTexts
         without that Telegram doesn't show me ordinary messages and I never see the link. No extra
         rights are needed, permission to send messages is enough.
 
-        A 👎 reaction on your link means downloading that video and sending it to the chat
+        A 😴 reaction on your link means downloading that video and sending it to the chat
         didn't work out.
         """,
         polish:
@@ -58,7 +58,7 @@ public static class BotTexts
         administratorem — bez tego Telegram nie pokazuje mi zwykłych wiadomości i nie zobaczę
         linku. Dodatkowe uprawnienia nie są potrzebne, wystarczy możliwość wysyłania wiadomości.
 
-        Reakcja 👎 na linku oznacza, że nie udało się pobrać tego filmu i wysłać go na czat.
+        Reakcja 😴 na linku oznacza, że nie udało się pobrać tego filmu i wysłać go na czat.
         """,
         russian:
         """
@@ -76,7 +76,7 @@ public static class BotTexts
         администратором — без этого Telegram не показывает мне обычные сообщения, и ссылку я не увижу.
         Дополнительные права выдавать не нужно, достаточно возможности отправлять сообщения.
 
-        Если на ссылке появилась реакция 👎 — значит скачать это видео и прислать его в чат
+        Если на ссылке появилась реакция 😴 — значит скачать это видео и прислать его в чат
         не получилось.
         """,
         ukrainian:
@@ -96,7 +96,7 @@ public static class BotTexts
         я не побачу. Додаткові права видавати не потрібно, достатньо можливості надсилати
         повідомлення.
 
-        Якщо на посиланні з'явилася реакція 👎 — значить завантажити це відео та надіслати його
+        Якщо на посиланні з'явилася реакція 😴 — значить завантажити це відео та надіслати його
         в чат не вдалося.
         """);
 }

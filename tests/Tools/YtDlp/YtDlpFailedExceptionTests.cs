@@ -85,6 +85,34 @@ public class YtDlpFailedExceptionTests
         Assert.True(IsFinal(stderr));
     }
 
+    [Fact]
+    public void Knows_a_post_of_photos_holds_no_video()
+    {
+        var carousel = string.Join('\n',
+            "ERROR: [Instagram] ABC: No video formats found!",
+            "ERROR: [Instagram] DEF: No video formats found!");
+
+        Assert.True(HoldsNoVideo(NoVideoFormats));
+        Assert.True(HoldsNoVideo(carousel));
+    }
+
+    // A carousel with a photo and a video that failed on the way had something to download.
+    [Theory]
+    [InlineData("")]
+    [InlineData("ERROR: [Instagram] ABC: Requested content is not available, rate-limit reached or login required")]
+    [InlineData("ERROR: Unsupported URL: https://www.tiktok.com/@someone/photo/123")]
+    [InlineData("ERROR: [Instagram] ABC: No video formats found!\nERROR: unable to download video data: Connection reset by peer")]
+    [InlineData("WARNING: [Instagram] ABC: No video formats found in the first entry\nERROR: [Instagram] ABC: This post is not available")]
+    public void Does_not_call_a_failure_a_post_without_video(string standardError)
+    {
+        Assert.False(HoldsNoVideo(standardError));
+    }
+
+    private static bool HoldsNoVideo(string standardError)
+    {
+        return new YtDlpFailedException(1, standardOutput: "", standardError).HoldsNoVideo;
+    }
+
     /// <summary>The message is what ends up under "Failed to process".</summary>
     [Fact]
     public void Carries_the_reason_into_its_message()

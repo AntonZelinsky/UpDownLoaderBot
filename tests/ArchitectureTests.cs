@@ -82,9 +82,8 @@ public class ArchitectureTests
     }
 
     /// <summary>
-    ///     Cleanup lives in exactly one <c>using</c> in the worker, so a downloader or the preparer
-    ///     that reached for the folder could delete files another stage is still reading. Inside
-    ///     Tools/ the type is visible by nesting rather than by an import, hence a check by name.
+    ///     Cleanup lives in one <c>using</c> in the worker. Inside Tools/ the type is visible by
+    ///     nesting rather than by an import, hence a check by name.
     /// </summary>
     [Fact]
     public void Only_the_bot_layer_names_the_download_folder()
@@ -98,7 +97,7 @@ public class ArchitectureTests
         Assert.Empty(offenders);
     }
 
-    /// <summary>Found once: Folder() is called per file, and each call used to walk the tree again.</summary>
+    /// <summary>Found once: Folder() is called per file.</summary>
     private static readonly DirectoryInfo Root = FindSourceRoot();
 
     private static IEnumerable<FileInfo> CoreFiles()

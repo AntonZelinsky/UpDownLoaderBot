@@ -29,9 +29,7 @@ public class TikTokMirrorDownloaderTests : IDisposable
         }
     }
 
-    // Only the host is rewritten, so the mirror claims exactly the shapes whose path it routes. It
-    // must not claim the rest: CanHandle is the whole of the routing, and a downloader that claims
-    // what it will 404 on spends a request to learn what the shape already said.
+    // Only the host is rewritten, so the mirror claims exactly the shapes whose path it routes.
     [Theory]
     [InlineData("https://www.tiktok.com/@scout2015/video/123", true)]
     [InlineData("https://m.tiktok.com/@scout2015/video/123", true)]
@@ -81,8 +79,7 @@ public class TikTokMirrorDownloaderTests : IDisposable
         Assert.Contains("TelegramBot", captured.Headers.UserAgent.ToString());
     }
 
-    // A short link needs no rewriting of its path either: the mirror answers /<code> the way it
-    // answers /t/<code>, so it resolves the link itself and the id stays the code we already have.
+    // The mirror answers /<code> the way it answers /t/<code> and follows the redirect itself.
     [Theory]
     [InlineData("https://vt.tiktok.com/ZSqetDcY9/", "https://d.tnktok.com/ZSqetDcY9/")]
     [InlineData("https://vm.tiktok.com/ZNdA1qXBb/", "https://d.tnktok.com/ZNdA1qXBb/")]

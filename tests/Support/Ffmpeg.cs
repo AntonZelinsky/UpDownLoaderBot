@@ -2,16 +2,12 @@ using System.Diagnostics;
 
 namespace UpDownLoaderBot.Tests.Support;
 
-/// <summary>
-///     The bits of ffmpeg-driving shared by the tests that need real video files: the metadata edge
-///     cases cannot be faked, so more than one test builds its fixture with it.
-/// </summary>
+/// <summary>ffmpeg for the tests that need real video files: the metadata edge cases cannot be faked.</summary>
 public static class Ffmpeg
 {
     /// <summary>
-    ///     Why the tools cannot be used, or <c>null</c> when they can. Returned rather than logged:
-    ///     each caller writes it to its own <c>ITestOutputHelper</c> before passing the test, so a
-    ///     runner without ffmpeg stays green.
+    ///     Why the tools cannot be used, or <c>null</c> when they can. Returned rather than logged, so
+    ///     each caller writes it to its own <c>ITestOutputHelper</c>.
     /// </summary>
     public static string? Unavailable()
     {

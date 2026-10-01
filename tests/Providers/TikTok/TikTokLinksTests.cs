@@ -81,7 +81,6 @@ public class TikTokLinksTests
         Assert.Null(Links.Find(text));
     }
 
-    // The shape is a fact about the link; which shapes a downloader takes is that downloader's own.
     [Theory]
     [InlineData("https://www.tiktok.com/@scout2015/video/123", TikTokLinkShape.Video)]
     [InlineData("https://m.tiktok.com/@scout2015/video/123", TikTokLinkShape.Video)]

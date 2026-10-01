@@ -2,11 +2,7 @@ using UpDownLoaderBot.Core;
 
 namespace UpDownLoaderBot.Providers.Instagram;
 
-/// <summary>
-///     Everything Instagram contributes to the container, so composition stays one line. Named for the
-///     framework's own suffix so one search for <c>ServiceCollectionExtensions</c> finds every place
-///     the application is wired, whichever provider added it.
-/// </summary>
+/// <summary>Everything Instagram contributes to the container, so composition stays one line.</summary>
 public static class InstagramServiceCollectionExtensions
 {
     public static IServiceCollection AddInstagram(

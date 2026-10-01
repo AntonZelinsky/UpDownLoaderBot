@@ -2,9 +2,7 @@ namespace UpDownLoaderBot.Bot;
 
 /// <summary>
 ///     One user-facing message in every language the bot speaks, English standing in for the rest.
-///     The texts themselves live in <see cref="BotTexts" />; ask for one through <see cref="For" />,
-///     which is why the languages are not exposed one by one — a caller reaching for a single
-///     language would skip the fallback.
+///     The languages are private so that <see cref="For" />, with its fallback, is the only way in.
 /// </summary>
 public sealed class LocalizedText
 {

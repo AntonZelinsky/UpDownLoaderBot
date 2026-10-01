@@ -6,13 +6,16 @@ namespace UpDownLoaderBot.Tools.YtDlp;
 /// </summary>
 public sealed class YtDlpFailedException : Exception
 {
+    /// <summary>What yt-dlp prints for an item that is a photo.</summary>
+    private const string NoVideoReason = "No video formats found";
+
     /// <summary>
     ///     What yt-dlp says about the post rather than about getting to it. Rate limiting and an expired
-    ///     login count too: neither clears within the retry delay, and the user is waiting for the 👎.
+    ///     login count too: neither clears within the retry delay.
     /// </summary>
     private static readonly string[] FinalReasons =
     [
-        "No video formats found",
+        NoVideoReason,
         // Covers "Requested content…", "This post…" and "requested format is not available" alike.
         "is not available",
         "Video unavailable",
@@ -29,24 +32,30 @@ public sealed class YtDlpFailedException : Exception
     public YtDlpFailedException(int exitCode, string standardOutput, string standardError)
         : base(Describe(exitCode, standardOutput, standardError))
     {
-        IsFinal = IsFinalReason(standardError);
-    }
-
-    /// <summary>Whether another attempt is pointless, so the caller can stop rather than wait.</summary>
-    public bool IsFinal { get; }
-
-    /// <summary>
-    ///     Whether <b>every</b> reported failure is about the post: with <c>--ignore-errors</c> a
-    ///     carousel prints one per item, and a single unrecognized line earns another attempt. Reading
-    ///     prose is brittle, so the default stays the old behaviour — retry.
-    /// </summary>
-    private static bool IsFinalReason(string standardError)
-    {
         var reported = ReportedErrors(standardError);
 
+        IsFinal = EveryLineSaysOneOf(reported, FinalReasons);
+        HoldsNoVideo = EveryLineSaysOneOf(reported, [NoVideoReason]);
+    }
+
+    /// <summary>
+    ///     Whether another attempt is pointless, so the caller can stop rather than wait. Reading prose
+    ///     is brittle, so the default stays the old behaviour — retry.
+    /// </summary>
+    public bool IsFinal { get; }
+
+    /// <summary>The post was reached and holds no video at all. Implies <see cref="IsFinal" />.</summary>
+    public bool HoldsNoVideo { get; }
+
+    /// <summary>
+    ///     <b>Every</b> line: with <c>--ignore-errors</c> a carousel prints one per item, and a single
+    ///     other line means something there could have been downloaded.
+    /// </summary>
+    private static bool EveryLineSaysOneOf(List<string> reported, string[] reasons)
+    {
         return reported.Count > 0
                && reported.TrueForAll(line =>
-                   FinalReasons.Any(reason => line.Contains(reason, StringComparison.OrdinalIgnoreCase)));
+                   reasons.Any(reason => line.Contains(reason, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>Only the ERROR lines: stderr also carries warnings and "please report this issue".</summary>

@@ -5,10 +5,8 @@ using UpDownLoaderBot.Tools.YtDlp;
 namespace UpDownLoaderBot.Tests.Tools.YtDlp;
 
 /// <summary>
-///     Pins the one thing about <c>-S</c> that is not a preference but a requirement, because nothing
-///     else writes the coupling down: <c>TelegramVideoPreparer</c> refuses every codec but H.264, so a
-///     sort that ranks resolution first buys a taller file the bot cannot send. TikTok is where that
-///     bites — its 720p rendition exists only in H.265.
+///     Pins the one thing about <c>-S</c> that is a requirement rather than a preference: the codec
+///     comes first. TikTok is where that bites — its 720p rendition exists only in H.265.
 /// </summary>
 public class YtDlpFormatSortTests
 {
