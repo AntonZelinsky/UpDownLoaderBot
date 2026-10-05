@@ -7,12 +7,13 @@ public static class BotTexts
     public static readonly LocalizedText StartInstructions = new(
         belarusian:
         """
-        Прывітанне! Я ўмею спампоўваць відэа з Instagram і TikTok.
+        Прывітанне! Я ўмею спампоўваць відэа з Instagram, TikTok і Facebook.
 
         Каб атрымаць відэа, дашліце мне спасылку на яго — Reels, пост з відэа або старую
-        IGTV-спасылку (instagram.com/reel/…, /p/…, /tv/…) альбо відэа з TikTok
-        (tiktok.com/@…/video/…, кароткія vm.tiktok.com/… таксама падыдуць). У адказ на гэтую
-        спасылку прыйдзе само відэа.
+        IGTV-спасылку (instagram.com/reel/…, /p/…, /tv/…), відэа з TikTok
+        (tiktok.com/@…/video/…, кароткія vm.tiktok.com/… таксама падыдуць) альбо відэа ці Reels
+        з Facebook (facebook.com/share/r/…, /reel/…, fb.watch/…). У адказ на гэтую спасылку
+        прыйдзе само відэа.
 
         Фотаздымкі я не спампоўваю — ні пост з фота ў Instagram, ні фотаслайдшоу ў TikTok.
         З поста Instagram з некалькімі відэа дашлю першае.
@@ -27,11 +28,12 @@ public static class BotTexts
         """,
         english:
         """
-        Hi! I download videos from Instagram and TikTok.
+        Hi! I download videos from Instagram, TikTok and Facebook.
 
         Send me a link to one — an Instagram Reel, a post with a video or an old IGTV link
-        (instagram.com/reel/…, /p/…, /tv/…), or a TikTok video (tiktok.com/@…/video/…, and the
-        short vm.tiktok.com/… links too). The video comes back as a reply to that link.
+        (instagram.com/reel/…, /p/…, /tv/…), a TikTok video (tiktok.com/@…/video/…, and the
+        short vm.tiktok.com/… links too), or a Facebook video or reel (facebook.com/share/r/…,
+        /reel/…, fb.watch/…). The video comes back as a reply to that link.
 
         I don't download photos — neither an Instagram photo post nor a TikTok photo slideshow.
         From an Instagram post with several videos I send the first one.
@@ -45,11 +47,12 @@ public static class BotTexts
         """,
         polish:
         """
-        Cześć! Pobieram filmy z Instagrama i TikToka.
+        Cześć! Pobieram filmy z Instagrama, TikToka i Facebooka.
 
         Wyślij mi link do filmu — Reels, post z filmem albo stary link IGTV
-        (instagram.com/reel/…, /p/…, /tv/…) lub film z TikToka (tiktok.com/@…/video/…, krótkie
-        linki vm.tiktok.com/… też się nadają). Film wróci w odpowiedzi na ten link.
+        (instagram.com/reel/…, /p/…, /tv/…), film z TikToka (tiktok.com/@…/video/…, krótkie
+        linki vm.tiktok.com/… też się nadają) lub film albo rolkę z Facebooka
+        (facebook.com/share/r/…, /reel/…, fb.watch/…). Film wróci w odpowiedzi na ten link.
 
         Zdjęć nie pobieram — ani posta ze zdjęciami na Instagramie, ani pokazu slajdów na TikToku.
         Z posta na Instagramie z kilkoma filmami wyślę pierwszy.
@@ -62,11 +65,12 @@ public static class BotTexts
         """,
         russian:
         """
-        Привет! Я умею скачивать видео из Instagram и TikTok.
+        Привет! Я умею скачивать видео из Instagram, TikTok и Facebook.
 
         Чтобы получить видео, пришлите мне ссылку на него — Reels, пост с видео или старую
-        IGTV-ссылку (instagram.com/reel/…, /p/…, /tv/…) либо видео из TikTok
-        (tiktok.com/@…/video/…, короткие vm.tiktok.com/… тоже подойдут). В ответ на эту ссылку
+        IGTV-ссылку (instagram.com/reel/…, /p/…, /tv/…), видео из TikTok
+        (tiktok.com/@…/video/…, короткие vm.tiktok.com/… тоже подойдут) либо видео или Reels
+        из Facebook (facebook.com/share/r/…, /reel/…, fb.watch/…). В ответ на эту ссылку
         придёт само видео.
 
         Фотографии я не скачиваю — ни пост с фото в Instagram, ни фотослайдшоу в TikTok.
@@ -81,12 +85,13 @@ public static class BotTexts
         """,
         ukrainian:
         """
-        Привіт! Я вмію завантажувати відео з Instagram і TikTok.
+        Привіт! Я вмію завантажувати відео з Instagram, TikTok і Facebook.
 
         Щоб отримати відео, надішліть мені посилання на нього — Reels, пост із відео або старе
-        IGTV-посилання (instagram.com/reel/…, /p/…, /tv/…) чи відео з TikTok
-        (tiktok.com/@…/video/…, короткі vm.tiktok.com/… теж підійдуть). У відповідь на це
-        посилання прийде саме відео.
+        IGTV-посилання (instagram.com/reel/…, /p/…, /tv/…), відео з TikTok
+        (tiktok.com/@…/video/…, короткі vm.tiktok.com/… теж підійдуть) чи відео або Reels
+        з Facebook (facebook.com/share/r/…, /reel/…, fb.watch/…). У відповідь на це посилання
+        прийде саме відео.
 
         Фотографії я не завантажую — ні пост із фото в Instagram, ні фотослайдшоу в TikTok.
         З поста Instagram з кількома відео надішлю перше.

@@ -1,9 +1,9 @@
 # UpDownLoaderBot
 
 [@UpDownLoaderBot](https://t.me/UpDownLoaderBot) — a Telegram bot that downloads
-Instagram Reels and TikTok videos and sends them straight back to the chat. Just give it a link,
-in a direct message, a group or a channel. When a download fails, the bot reacts to
-the link with 😴. A link with nothing to download — a post of photos only, a TikTok
+Instagram Reels, TikTok and Facebook videos and sends them straight back to the chat.
+Just give it a link, in a direct message, a group or a channel. When a download fails,
+the bot reacts to the link with 😴. A link with nothing to download — a post of photos only, a TikTok
 slideshow — gets no reaction at all: there was no video to send, so nothing went wrong.
 
 `/start` — the button Telegram shows on the first visit — answers with a short
@@ -36,7 +36,9 @@ each class does, one request step by step, and which method to open for which qu
 The bot picks the first link it recognizes out of the message — an Instagram `reel`,
 `reels`, `p` or `tv` link, or any TikTok link — `/@user/video/`, `/@user/photo/`,
 `/share/video/`, a short `vm.`/`vt.tiktok.com` or `/t/` one, a TikTok Lite or
-`tiktokv.com` share link, or an old `/embed/` or `/v/….html` one — and hands it to the downloaders that take that link, in turn,
+`tiktokv.com` share link, or an old `/embed/` or `/v/….html` one — or a Facebook video link —
+`/share/r/` and `/share/v/` from the share sheet, `/reel/`, `/watch?v=`, `/<page>/videos/` or
+`fb.watch/` — and hands it to the downloaders that take that link, in turn,
 stopping at the first success. One link means one video: a reel, an IGTV post and a
 TikTok video have only one anyway, and of an Instagram carousel the first video is what
 comes back. It arrives as a reply to the link, with the link as its caption, and named
@@ -52,8 +54,8 @@ item reports `No video formats found!`, there is *nothing to send*; the same hol
 link no downloader takes. Both end in silence. Anything else that leaves the bot without
 a video is a failure, and gets the 😴.
 
-Each platform has the same pair: a mirror that answers a rewritten link with the video
-file itself, and yt-dlp behind it.
+Instagram and TikTok have the same pair: a mirror that answers a rewritten link with the video
+file itself, and yt-dlp behind it. Facebook has yt-dlp alone.
 
 **Instagram**
 
@@ -84,7 +86,15 @@ file itself, and yt-dlp behind it.
    rendition in H.265 only, which the Bot API's clients cannot be relied on to play and
    the bot refuses, so the format sort asks for H.264 before it asks for height.
 
-Any of the four downloaders can be switched off with a flag — see
+**Facebook** — yt-dlp only, and no cookies: a public reel is served without an account.
+No mirror serves the file — the kkinstagram-style hosts for Facebook either redirect to an ad
+network or are down — so there is nothing to put in front of it. yt-dlp follows a `/share/r/`
+link to the reel itself, and the reel's progressive `hd` rendition is H.264 + AAC while its DASH
+ladder is AV1 only, so the default format sort already picks the sendable one. A video that is
+gone or private comes back as `Cannot parse data`, which yt-dlp prints for a broken extractor too,
+so it is retried once before the 😴.
+
+Any of the Instagram and TikTok downloaders can be switched off with a flag — see
 [Configuration](#configuration).
 
 Before the upload, the file goes through `ffprobe`. The reason is that the Bot API
@@ -201,9 +211,10 @@ the bot refuses to start otherwise.
 | `Instagram:YtDlp:CookiesFile`       | path to the Instagram cookies for yt-dlp      |
 | `TikTok:Downloaders:TnkTok`         | whether the tnktok downloader is enabled      |
 | `TikTok:Downloaders:YtDlp`          | whether the yt-dlp downloader is enabled      |
+| `Facebook:Downloaders:YtDlp`        | the only Facebook downloader; must stay on    |
 
-TikTok has no cookies setting because it needs no account: both of its downloaders work
-anonymously. Instagram serves video to signed-in users only — see
+TikTok and Facebook have no cookies setting because they need no account: their downloaders
+work anonymously. Instagram serves video to signed-in users only — see
 [Instagram cookies](#instagram-cookies).
 
 Keep the token in an environment variable or a secret, never in the code. If it ever

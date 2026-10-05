@@ -1,6 +1,7 @@
 using Telegram.Bot;
 using UpDownLoaderBot.Bot;
 using UpDownLoaderBot.Core;
+using UpDownLoaderBot.Providers.Facebook;
 using UpDownLoaderBot.Providers.Instagram;
 using UpDownLoaderBot.Providers.TikTok;
 using UpDownLoaderBot.Tools;
@@ -24,11 +25,12 @@ if (string.IsNullOrWhiteSpace(token))
 
 builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(token));
 builder.Services.AddSingleton<TelegramVideoPreparer>();
-// Platform registration order decides the intake: a message carrying links of both platforms is
+// Platform registration order decides the intake: a message carrying links of several platforms is
 // answered with the first platform here that recognizes one, not with the link that comes first in
 // the text. Arbitrating by position needs each match's offset (backlog.md §8).
 builder.Services.AddInstagram(appConfig.GetSection("Instagram"), startupLogger);
 builder.Services.AddTikTok(appConfig.GetSection("TikTok"), startupLogger);
+builder.Services.AddFacebook(appConfig.GetSection("Facebook"), startupLogger);
 
 builder.Services.AddSingleton<MediaLinkParser>();
 builder.Services.AddSingleton<MediaFetcher>();

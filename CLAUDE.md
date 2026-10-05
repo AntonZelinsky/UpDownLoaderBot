@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A Telegram bot ([@UpDownLoaderBot](https://t.me/UpDownLoaderBot)) that takes an Instagram
-Reels/post/IGTV or TikTok link out of a chat message and sends the video back. .NET 10, ASP.NET Core host
+Reels/post/IGTV, TikTok or Facebook video link out of a chat message and sends the video back. .NET 10, ASP.NET Core host
 with the bot as a `BackgroundService` on long polling. `readme.md` is the detailed reference —
 it documents the *why* behind most of the non-obvious decisions below.
 
@@ -48,7 +48,7 @@ src/Tools/         what drives an external binary, the disk, or a mirror
   Ffprobe/         the preparer and its wire format            → Core (returns its PreparedVideo)
   Http/            the site-agnostic mirror downloader base    → Core (implements its interfaces)
   YtDlp/           the site-agnostic downloader base           → Core (implements its interfaces)
-src/Providers/     one folder per platform: Instagram/, TikTok/ → Core, Tools/Http, Tools/YtDlp
+src/Providers/     one folder per platform: Instagram/, TikTok/, Facebook/ → Core, Tools/Http, Tools/YtDlp
 src/Program.cs     composes every layer, plus GET /health
 ```
 
@@ -61,7 +61,8 @@ Registration lives in `<Name>ServiceCollectionExtensions`, never in `Program.cs`
 - **Only `Bot/` and `Program.cs` may reference `Telegram.Bot`.** Nothing below them knows the chat
   exists.
 - **`Core/` names no platform it downloads from.** Adding one stays a matter of `Providers/` and
-  `Program.cs`; if "Instagram" or "TikTok" appears under `Core/`, something landed in the wrong layer.
+  `Program.cs`; if "Instagram", "TikTok" or "Facebook" appears under `Core/`, something landed in the
+  wrong layer.
 - **`Core/` reaches for exactly one piece of infrastructure**, the preparer in `Tools/Ffprobe/`.
   Everything else there is checked by imports alone, which is why `ProcessRunner` and
   `DownloadFolder` were moved out of the root namespace: a child namespace sees the root *without*
@@ -72,7 +73,7 @@ Registration lives in `<Name>ServiceCollectionExtensions`, never in `Program.cs`
 - **`Bot/` may import `UpDownLoaderBot.Tools`** — the worker creates the request's folder — and that
   import opens `ProcessRunner` too, so the test keeps that one out by name.
 - **Each platform registers itself.** `Providers/<Name>/<Name>ServiceCollectionExtensions.cs` takes
-  that platform's config section and the startup logger, and `Program.cs` is two calls. The order of
+  that platform's config section and the startup logger, and `Program.cs` is one call per platform. The order of
   those calls is behaviour: `MediaLinkParser` asks the platforms in registration order.
 
 Request flow:
@@ -197,6 +198,24 @@ what to call it in a log line.
   silence. **No cookies**: the extractor solves TikTok's challenge in pure Python (`hashlib`), so no
   JS runtime and no `--cookies` are needed, and nothing is mounted for it.
 
+#### Facebook
+
+- `FacebookLinks` : `IPlatformLinks` — hosts `facebook.com` with `www.`/`m.`/`web.`/`mbasic.`, and
+  `fb.watch`. Paths: `/share/{r,v}/<code>` (what the share sheet hands out), `/reel/<id>`,
+  `/watch?v=<id>` (the query *is* the id, so it stays in the match, along with any parameter Facebook
+  put before `v`), `/<page>/videos/[<slug>/]<id>`,
+  and `fb.watch/<code>`. A share code stands in for the id, as a TikTok short code does. **`/share/p/`
+  is not matched**: it is a post, mostly photos or text, and yt-dlp answers one without a video with
+  `Cannot parse data` rather than `No video formats found` — a 😴 for a post that never held a video.
+  No `ShapeOf` and no shape enum: there is one downloader, so nothing has to tell shapes apart yet.
+- `FacebookYtDlpDownloader` : `YtDlpDownloaderBase` — the only Facebook downloader, so it is also the
+  last and takes every Facebook link. **No mirror**: the kkinstagram-style hosts for Facebook either
+  redirect to an ad network or are down. **No cookies**: a public reel is served anonymously. yt-dlp
+  follows a share link to the reel itself (the generic extractor follows the redirect), and the
+  reel's progressive `hd` rendition is H.264 + AAC while the DASH ladder is AV1 only, so the default
+  `FormatSort` already picks the sendable file. A deleted or private video prints `Cannot parse data`,
+  which is not in `FinalReasons` — it is also what a broken extractor prints — so it gets its retry.
+
 TikTok specifics worth knowing: the extractor prints `Your IP address is blocked from accessing this
 post` whenever the API hands back nothing — for a deleted video as much as for a real block — so
 `IsFinal` deliberately does *not* read it as final; a photo post's URL has no extractor at all and
@@ -255,8 +274,8 @@ quoting), timeout that kills the whole process tree, both streams read concurren
 Everything lives under the `UpDownLoaderBot` section of `src/appsettings.json`; environment
 variables override with `__` for nesting (`UpDownLoaderBot__Telegram__Token`), which is how Docker
 supplies the token. Each platform owns a section — `Instagram:Downloaders:{KkInstagram,YtDlp}`,
-`TikTok:Downloaders:{TnkTok,YtDlp}`, `Instagram:YtDlp:CookiesFile` — and its own `Add<Name>` throws
-at startup if every one of its downloaders is off. Only the token ever comes from the environment,
+`TikTok:Downloaders:{TnkTok,YtDlp}`, `Facebook:Downloaders:YtDlp`, `Instagram:YtDlp:CookiesFile` —
+and its own `Add<Name>` throws at startup if every one of its downloaders is off. Only the token ever comes from the environment,
 so these names live in `src/appsettings.json` alone.
 
 The token in `src/appsettings.json` belongs to a **test bot** and is there on purpose — leave it
@@ -293,6 +312,8 @@ written against two hosts.
 
 - `KkInstagramDownloaderTests`, `TikTokMirrorDownloaderTests` — stubbed `HttpMessageHandler`, fully
   offline. Both pin the rewritten URL, the bot UA, the naming by post id and both 60 MB limits.
+- `FacebookLinksTests` — the same for Facebook: share codes become the id, the `?v=` of a watch link
+  stays in the URL while `?rdid=`/`?mibextid=` do not, and `/share/p/` is not matched.
 - `TikTokLinksTests` — every link shape against the real pattern, including that a short link's code
   becomes the id and that the `?_t=` tail stays out of the URL.
 - `TelegramVideoPreparerTests` — builds real files with ffmpeg (the metadata edge cases cannot be

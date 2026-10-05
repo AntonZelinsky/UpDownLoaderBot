@@ -53,6 +53,10 @@ flowchart TB
             tnk["TikTokMirrorDownloader<br/>mirror: video, short"]
             ttYt["TikTokYtDlpDownloader<br/>yt-dlp, all but photo"]
         end
+        subgraph Facebook
+            fbLinks["FacebookLinks<br/>link shapes"]
+            fbYt["FacebookYtDlpDownloader<br/>yt-dlp, every link"]
+        end
     end
 
     subgraph Tools["src/Tools — external binaries, disk, mirrors"]
@@ -75,6 +79,7 @@ flowchart TB
     parser --> iLinks
     iLinks -.-> igLinks
     iLinks -.-> ttLinks
+    iLinks -.-> fbLinks
 
     fetcher --> iDown
     fetcher --> preparer
@@ -82,11 +87,13 @@ flowchart TB
     iDown -.-> igYt
     iDown -.-> tnk
     iDown -.-> ttYt
+    iDown -.-> fbYt
 
     kk ==> mirrorBase
     tnk ==> mirrorBase
     igYt ==> ytBase
     ttYt ==> ytBase
+    fbYt ==> ytBase
 
     mirrorBase --> mirrors
     ytBase --> runner
@@ -133,6 +140,8 @@ One row per class, grouped as the folders are. In a rendered view the name opens
 | [TikTokLinks](src/Providers/TikTok/TikTokLinks.cs)                              | TikTok link shapes, and which `TikTokLinkShape` a link is        |
 | [TikTokMirrorDownloader](src/Providers/TikTok/TikTokMirrorDownloader.cs)        | The tnktok mirror; takes video and short links                   |
 | [TikTokYtDlpDownloader](src/Providers/TikTok/TikTokYtDlpDownloader.cs)          | yt-dlp without cookies; takes every TikTok link but a photo post |
+| [FacebookLinks](src/Providers/Facebook/FacebookLinks.cs)                        | Facebook video link shapes                                       |
+| [FacebookYtDlpDownloader](src/Providers/Facebook/FacebookYtDlpDownloader.cs)    | yt-dlp without cookies; the only one, takes every Facebook link  |
 | `*ServiceCollectionExtensions`                                                  | Registers a platform: its links, then its downloaders in order   |
 | `*Options`                                                                      | That platform's settings, read from `src/appsettings.json`       |
 
@@ -214,16 +223,19 @@ sequenceDiagram
 
 `MediaFetcher` asks the mirror first and yt-dlp second, skipping any whose `CanHandle` says no. The
 first one whose file passes `ffprobe` wins. Either downloader of a platform can be switched off in
-configuration, but not both — the app refuses to start.
+configuration, but not both — the app refuses to start. Facebook has no mirror, so yt-dlp is its
+only downloader and cannot be switched off.
 
-| Link                                                    | Mirror      | yt-dlp |
-|---------------------------------------------------------|-------------|--------|
-| Instagram `/reel/`, `/reels/`, `/tv/`                   | kkinstagram | yes    |
-| Instagram `/p/`: a photo, a carousel or a video         | —           | yes    |
-| TikTok `/@user/video/`, `/share/video/`                 | tnktok      | yes    |
-| TikTok short: `vm.`/`vt.tiktok.com/<code>`, `/t/<code>` | tnktok      | yes    |
-| TikTok legacy: `/embed/<id>`, `/v/<id>.html`            | —           | yes    |
-| TikTok `/@user/photo/`, `/share/photo/`                 | —           | —      |
+| Link                                                          | Mirror      | yt-dlp |
+|---------------------------------------------------------------|-------------|--------|
+| Instagram `/reel/`, `/reels/`, `/tv/`                         | kkinstagram | yes    |
+| Instagram `/p/`: a photo, a carousel or a video               | —           | yes    |
+| TikTok `/@user/video/`, `/share/video/`                       | tnktok      | yes    |
+| TikTok short: `vm.`/`vt.tiktok.com/<code>`, `/t/<code>`       | tnktok      | yes    |
+| TikTok legacy: `/embed/<id>`, `/v/<id>.html`                  | —           | yes    |
+| TikTok `/@user/photo/`, `/share/photo/`                       | —           | —      |
+| Facebook `/share/r/`, `/share/v/`, `fb.watch/<code>`          | —           | yes    |
+| Facebook `/reel/<id>`, `/watch?v=<id>`, `/<page>/videos/<id>` | —           | yes    |
 
 A `/photo/` link is one nobody takes: there is nothing to send, and the bot leaves no reaction.
 A `/p/` post goes to yt-dlp alone, and one that turns out to hold only photos ends the same way.
@@ -236,14 +248,14 @@ The component is in the table above; this says which method to open.
 |----------------------------------------------|--------------------------------------------------------------|
 | how a message is handled                     | `TelegramBotWorker.HandleUpdate`, then `HandleMediaRequest`  |
 | when the bot reacts and when it stays silent | `TelegramBotWorker.HandleMediaRequest`, `MediaFetcher.Fetch` |
-| which links are recognized                   | `[GeneratedRegex]` in `InstagramLinks`, `TikTokLinks`        |
+| which links are recognized                   | `[GeneratedRegex]` in each platform's `*Links`               |
 | which downloader takes a link                | `CanHandle` in each downloader                               |
 | the fallback between downloaders             | `MediaFetcher.Fetch`, `PrepareWhatIsSendable`                |
 | yt-dlp arguments, and what counts as success | `YtDlpDownloaderBase.BuildArguments`, `RunYtDlp`             |
 | when yt-dlp is retried, and when it is not   | `YtDlpDownloaderBase.Download`, `YtDlpFailedException`       |
 | Instagram cookies                            | `InstagramYtDlpDownloader` constructor, `PrepareCookiesFile` |
 | why a file is refused before sending         | `TelegramVideoPreparer.Prepare`                              |
-| the order of platforms and of downloaders    | `Program.cs`, then `AddInstagram` and `AddTikTok`            |
+| the order of platforms and of downloaders    | `Program.cs`, then each platform's `Add<Name>`               |
 | settings                                     | `src/appsettings.json`, the `*Options` classes               |
 | when files are deleted                       | `DownloadFolder.Dispose`, `DeleteLeftovers` at startup       |
 | `GET /health`                                | `MapGet("/health")` in `Program.cs`                          |

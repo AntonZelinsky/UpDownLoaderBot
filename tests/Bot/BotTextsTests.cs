@@ -69,6 +69,8 @@ public class BotTextsTests
         Assert.Contains("/tv/", text);
         Assert.Contains("tiktok.com/@", text);
         Assert.Contains("vm.tiktok.com/", text);
+        Assert.Contains("facebook.com/share/r/", text);
+        Assert.Contains("fb.watch/", text);
         Assert.Contains("😴", text);
     }
 }

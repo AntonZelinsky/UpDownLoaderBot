@@ -56,7 +56,7 @@ public class ArchitectureTests
     [Fact]
     public void The_core_layer_names_no_platform()
     {
-        string[] platforms = ["Instagram", "TikTok"];
+        string[] platforms = ["Facebook", "Instagram", "TikTok"];
 
         var offenders = CoreFiles()
             .Where(file => platforms.Any(platform =>
