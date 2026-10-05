@@ -34,17 +34,13 @@ public sealed class TelegramVideoPreparer
         EnsureMeasurable(filePath, video);
         EnsureTelegramCanSendIt(filePath, video, sizeBytes);
 
-        var durationSeconds = probed.Format?.DurationSeconds ?? 0;
+        var durationSeconds = (int)Math.Ceiling(probed.Format?.DurationSeconds ?? 0);
 
         _logger.LogInformation(
-            "Prepared {FilePath}: {Width}x{Height}, {Duration:F0}s, {SizeMb:F1} MB.",
+            "Prepared {FilePath}: {Width}x{Height}, {Duration}s, {SizeMb:F1} MB.",
             filePath, video.DisplayWidth, video.DisplayHeight, durationSeconds, sizeBytes / 1048576.0);
 
-        return new PreparedVideo(
-            filePath,
-            video.DisplayWidth,
-            video.DisplayHeight,
-            (int)Math.Ceiling(durationSeconds));
+        return new PreparedVideo(filePath, video.DisplayWidth, video.DisplayHeight, durationSeconds);
     }
 
     private async Task<FfprobeOutput> Probe(string filePath, CancellationToken cancellationToken)

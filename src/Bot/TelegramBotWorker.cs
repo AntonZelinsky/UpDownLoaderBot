@@ -1,4 +1,5 @@
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -17,6 +18,8 @@ public sealed class TelegramBotWorker : BackgroundService
 
     // Must be one of the fixed reactions the Bot API allows a bot, which rules out 😵.
     private const string FailureReaction = "😴";
+
+    private static readonly TimeSpan PollingRetryDelay = TimeSpan.FromSeconds(5);
 
     private readonly ITelegramBotClient _bot;
     private readonly MediaFetcher _fetcher;
@@ -58,22 +61,23 @@ public sealed class TelegramBotWorker : BackgroundService
             return;
         }
 
-        LogIncomingMessage(message, text);
-
         // A command we do not know is neither answered nor swallowed: the message goes on to the link
         // search, since it may belong to another bot in the group and still carry a link.
         if (CommandName(text) == StartCommand)
         {
+            LogIncomingMessage(message, text);
             await SendStartCommandInstructionsToChat(message, ct);
             return;
         }
 
         if (_links.FirstIn(text) is { } link)
         {
+            LogIncomingMessage(message, text);
             await HandleMediaRequest(link, message, ct);
         }
     }
 
+    // Called only for a message the bot acts on: the rest is other people's conversation, not ours to keep.
     private void LogIncomingMessage(Message message, string text)
     {
         _logger.LogInformation(
@@ -123,7 +127,7 @@ public sealed class TelegramBotWorker : BackgroundService
     {
         var url = link.Url;
 
-        _logger.LogInformation("Found a {Platform} link: {Url}", link.Platform, url);
+        _logger.LogInformation("Found a link to {Platform}: {Url}", link.Platform, url);
 
         using var folder = new DownloadFolder(_logger);
 
@@ -211,10 +215,30 @@ public sealed class TelegramBotWorker : BackgroundService
         }
     }
 
-    private Task HandleError(ITelegramBotClient _, Exception exception, HandleErrorSource source, CancellationToken ct)
+    private async Task HandleError(ITelegramBotClient _, Exception exception, HandleErrorSource source, CancellationToken ct)
     {
-        _logger.LogError(exception, "Polling error from {Source}", source);
-        return Task.CompletedTask;
+        if (source != HandleErrorSource.PollingError)
+        {
+            _logger.LogError(exception, "Error from {Source}", source);
+            return;
+        }
+
+        // An outage on Telegram's side: the bot can do nothing but wait, so one line without the trace.
+        // A RequestException that is not an ApiRequestException never got an answer at all (a timeout,
+        // a dropped connection).
+        if (exception is ApiRequestException { ErrorCode: >= 500 } or not ApiRequestException and RequestException)
+        {
+            _logger.LogWarning("Polling failed, retrying in {Delay}s: {Reason}",
+                PollingRetryDelay.TotalSeconds, exception.Message);
+        }
+        else
+        {
+            _logger.LogError(exception, "Polling error");
+        }
+
+        // The library calls GetUpdates again the moment this returns, so without the pause a failing
+        // API is hammered in a tight loop. Cancellation ends the polling, which the library expects.
+        await Task.Delay(PollingRetryDelay, ct);
     }
 
     private static string DescribeUser(User? user)
